@@ -182,6 +182,19 @@ private func snapshot(_ id: String) -> UsageSnapshot {
     XCTAssertNotNil(model.heldUntil, "a refresh inside the gap is refused, so it is a hold")
   }
 
+  /// The wiring, not just the formatter: the tooltip has to ask for the wait form, or a correct
+  /// `ResetText.wait` never reaches the button and the hold still reads "in 0m".
+  func testTooltipReportsASubMinuteHoldInSeconds() {
+    let now = Date()
+    XCTAssertEqual(UsagePanelView.refreshHelp(refreshing: false, heldUntil: now.addingTimeInterval(45), now: now), "Next attempt in 45s")
+  }
+
+  func testTooltipWordsTheOtherTwoStates() {
+    let now = Date()
+    XCTAssertEqual(UsagePanelView.refreshHelp(refreshing: false, heldUntil: nil, now: now), "Refresh now")
+    XCTAssertEqual(UsagePanelView.refreshHelp(refreshing: true, heldUntil: nil, now: now), "Refreshing…")
+  }
+
   func testNoHoldWhenNothingHasFailed() {
     let model = UsageModel(provider: StubProvider(provider: .codex) { snapshot("codex:window") }, defaults: makeDefaults(), restoring: nil)
     XCTAssertNil(model.heldUntil)
@@ -387,6 +400,36 @@ final class ResetTextTests: XCTestCase {
   func testPastResetIsEmpty() {
     let resets = Date(timeIntervalSince1970: 10_000)
     XCTAssertEqual(ResetText.short(until: resets, from: Date(timeIntervalSince1970: 20_000)), "0m", "clamped, never negative")
+  }
+
+  /// The regression: `short` allows no unit below a minute, so the refresh button spent the last
+  /// minute of every hold telling the user the next attempt was "in 0m".
+  func testSubMinuteWaitIsReportedInSeconds() {
+    let now = Date()
+    XCTAssertEqual(ResetText.wait(until: now.addingTimeInterval(45), from: now), "45s")
+    XCTAssertEqual(ResetText.wait(until: now.addingTimeInterval(1), from: now), "1s")
+  }
+
+  /// Rounding up, because a wait still in force must never render as no wait at all.
+  func testAPartialSecondStillCountsAsASecond() {
+    let now = Date()
+    XCTAssertEqual(ResetText.wait(until: now.addingTimeInterval(0.2), from: now), "1s")
+  }
+
+  /// A minute or more keeps the coarse wording, so the button and the reset countdowns beside it
+  /// do not disagree about how a duration is written.
+  func testAMinuteOrMoreKeepsTheCoarseWording() {
+    let now = Date()
+    XCTAssertEqual(ResetText.wait(until: now.addingTimeInterval(120), from: now), "2m")
+    XCTAssertEqual(
+      ResetText.wait(until: now.addingTimeInterval(3600), from: now), ResetText.short(until: now.addingTimeInterval(3600), from: now))
+  }
+
+  /// Reset countdowns are unchanged: they are measured in hours and the menu bar redraws every
+  /// half-minute, so seconds there would be both pointless and stale.
+  func testResetCountdownsAreUnaffected() {
+    let now = Date()
+    XCTAssertEqual(ResetText.short(until: now.addingTimeInterval(45), from: now), "0m")
   }
 }
 
