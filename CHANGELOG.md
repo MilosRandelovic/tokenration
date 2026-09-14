@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.4]
+
+- The refresh button's tooltip counts down in seconds under a minute. It previously allowed no unit below a minute, which suits a window that resets in hours but not a button whose commonest wait is the two-minute gap between attempts — so the last minute of every hold read "Next attempt in 0m". Reset countdowns are unchanged.
+
 ## [1.0.3]
 
 - Signing in again re-enables the refresh button immediately, instead of leaving it disabled for the rest of the auth backoff. A refresh asked for at that point already worked — `refresh` cuts an auth hold short as soon as the credentials behind it change — but the button had no way to know that and went on refusing the click for up to a quarter of an hour.
