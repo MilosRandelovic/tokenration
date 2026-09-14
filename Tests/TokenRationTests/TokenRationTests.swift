@@ -186,6 +186,78 @@ private func snapshot(_ id: String) -> UsageSnapshot {
     let model = UsageModel(provider: StubProvider(provider: .codex) { snapshot("codex:window") }, defaults: makeDefaults(), restoring: nil)
     XCTAssertNil(model.heldUntil)
   }
+
+  /// An auth hold waits for exactly one thing: different credentials. Once they are on disk
+  /// `refresh` clears the backoff and attempts, so the button has to be offered again — the
+  /// regression here left it dead for the rest of a quarter-hour interval after a sign-in.
+  func testSpentAuthHoldStopsBeingAHold() async {
+    let credentials = Box("rejected-token")
+    let defaults = makeDefaults()
+    let model = UsageModel(
+      provider: StubProvider(provider: .codex, outcome: { throw UsageError.sessionExpired }, credentials: credentials), defaults: defaults,
+      restoring: nil)
+
+    await model.refresh(trigger: "test")
+    await model.refreshCredentialState()
+    XCTAssertNotNil(model.heldUntil, "the credentials that were rejected are still the ones on disk")
+
+    // By the time an auth hold matters the minimum gap is long past; only the hold is in force.
+    defaults.set(Date(timeIntervalSinceNow: -300), forKey: "lastAttemptAt.codex")
+    credentials.value = "signed-in-again"
+    await model.refreshCredentialState()
+
+    XCTAssertNil(model.heldUntil, "a refresh now would clear the backoff and attempt, so it must be offered")
+  }
+
+  /// A 429 is the server asking for quiet, and signing in again does not change that.
+  func testRateLimitHoldSurvivesACredentialChange() async {
+    let credentials = Box("first")
+    let defaults = makeDefaults()
+    let model = UsageModel(
+      provider: StubProvider(provider: .codex, outcome: { throw UsageError.rateLimited(retryAfter: 600) }, credentials: credentials),
+      defaults: defaults, restoring: nil)
+
+    await model.refresh(trigger: "test")
+    defaults.set(Date(timeIntervalSinceNow: -300), forKey: "lastAttemptAt.codex")
+    credentials.value = "second"
+    await model.refreshCredentialState()
+
+    XCTAssertNotNil(model.heldUntil, "a throttle is not escaped by signing in again")
+  }
+
+  /// Only the auth paths record a fingerprint. A backoff from an ordinary failure records none,
+  /// so signing in again must not shorten it — whatever failed had nothing to do with
+  /// credentials, and unlike a 429 there is no separate deadline to fall back on.
+  func testErrorBackoffSurvivesACredentialChange() async {
+    struct Unreachable: Error {}
+    let credentials = Box("first")
+    let defaults = makeDefaults()
+    let model = UsageModel(
+      provider: StubProvider(provider: .codex, outcome: { throw Unreachable() }, credentials: credentials), defaults: defaults,
+      restoring: nil)
+
+    await model.refresh(trigger: "test")
+    XCTAssertNil(model.rateLimitedUntil, "a plain failure is not a throttle, so only the backoff holds")
+    defaults.set(Date(timeIntervalSinceNow: -300), forKey: "lastAttemptAt.codex")
+    credentials.value = "second"
+    await model.refreshCredentialState()
+
+    XCTAssertNotNil(model.heldUntil, "an error backoff is not escaped by signing in again")
+  }
+
+  /// The comparison needs both fingerprints. Until the credentials have been read the hold
+  /// stands, or a launch would offer a click that `refresh` still refuses.
+  func testAuthHoldStandsUntilCredentialsHaveBeenRead() async {
+    let defaults = makeDefaults()
+    let model = UsageModel(
+      provider: StubProvider(provider: .codex, outcome: { throw UsageError.sessionExpired }, credentials: Box("token")), defaults: defaults,
+      restoring: nil)
+
+    await model.refresh(trigger: "test")
+    defaults.set(Date(timeIntervalSinceNow: -300), forKey: "lastAttemptAt.codex")
+
+    XCTAssertNotNil(model.heldUntil, "no reading of the credentials has happened yet")
+  }
 }
 
 // MARK: - Attention state
