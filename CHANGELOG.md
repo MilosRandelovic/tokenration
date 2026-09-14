@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.3]
+
+- Signing in again re-enables the refresh button immediately, instead of leaving it disabled for the rest of the auth backoff. A refresh asked for at that point already worked — `refresh` cuts an auth hold short as soon as the credentials behind it change — but the button had no way to know that and went on refusing the click for up to a quarter of an hour.
+- Opening the panel re-reads both providers' credentials, so a sign-in made since the last attempt clears the warning triangle and the "Session expired" message without waiting for a fetch.
+
 ## [1.0.2]
 
 - The bundled MCP server puts any warning at the front of `get_usage`'s summary line, bracketed,

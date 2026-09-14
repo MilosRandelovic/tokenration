@@ -163,6 +163,9 @@ private struct PanelRoot: View {
     layoutPanel()
     panel.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
+    // Credentials can have been replaced since the last attempt, which may be a quarter of an
+    // hour ago; re-reading them here is what clears the warning glyph and re-enables refresh.
+    Task { await providers.refreshCredentialStates() }
     // Background polling is slow by design; top up when the panel is opened — but only if
     // the reading is stale, so opening it repeatedly can't spam the endpoint.
     if let model = providers.selectedModel, model.isStale() { Task { await model.refresh(trigger: "panel opened") } }

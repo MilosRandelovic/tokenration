@@ -101,4 +101,8 @@ import UsageState
 
   /// Refresh every provider (each still subject to its own guards).
   func refreshAll(trigger: String) async { for model in models.values { await model.refresh(trigger: trigger) } }
+
+  /// Re-read every provider's credentials. Cheap — a Keychain read, no request — so it can run
+  /// on a panel open, where a sign-in made since the last attempt should already be visible.
+  func refreshCredentialStates() async { for model in models.values { await model.refreshCredentialState() } }
 }

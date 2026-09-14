@@ -19,6 +19,9 @@ import UsageState
   /// being throttled or offline, where waiting is the whole remedy — so the menu bar can ask
   /// for attention in one case and stay quiet in the other.
   private(set) var needsSignIn = false
+  /// The credentials on disk as last read by `refreshCredentialState()`, against which a hold's
+  /// recorded fingerprint is compared.
+  private var currentCredentialFingerprint: String?
   private(set) var isRefreshing = false
   /// Set while the usage endpoint is throttling us; the date is when we'll next retry.
   private(set) var rateLimitedUntil: Date?
@@ -106,11 +109,15 @@ import UsageState
   /// failed, which can be a quarter of an hour away.
   func refreshCredentialState() async {
     let problem = await provider.credentialProblem()
+    let fingerprint = await provider.credentialFingerprint()
     // Only set the message, never clear one: an unrelated failure — a throttle, a bad response
     // — is still the last thing that actually happened, and a successful fetch clears it anyway.
     if let problem { lastError = problem.errorDescription }
-    guard (problem != nil) != needsSignIn else { return }
+    let signInChanged = (problem != nil) != needsSignIn
+    let credentialChanged = fingerprint != currentCredentialFingerprint
+    guard signInChanged || credentialChanged else { return }
     needsSignIn = problem != nil
+    currentCredentialFingerprint = fingerprint
     onChange?()
   }
 
@@ -191,10 +198,25 @@ import UsageState
     // All three refusal paths in `refresh`, not just the throttle: an auth or error backoff
     // binds the same way, and so does the minimum gap since the last attempt — including one
     // that succeeded. Miss any of them and the button takes a click it cannot act on.
+    //
+    // The exception is a spent auth hold. It exists to wait for exactly one thing — different
+    // credentials — and `refresh` cuts it short the moment they arrive, so reporting it here
+    // would refuse a click that would have worked, for the rest of an interval measured in
+    // quarter-hours. The 429 and minimum-gap deadlines are unaffected; neither is escapable.
+    let backoffEnds = authHoldIsSpent ? nil : nextAttemptAt
     let gapEnds = lastAttemptAt.map { $0.addingTimeInterval(Self.minimumGap) }
-    let deadline = [nextAttemptAt, rateLimitedUntil, gapEnds].compactMap { $0 }.max()
+    let deadline = [backoffEnds, rateLimitedUntil, gapEnds].compactMap { $0 }.max()
     guard let deadline, deadline > Date() else { return nil }
     return deadline
+  }
+
+  /// Whether the hold in force is an auth hold whose credentials have since been replaced — the
+  /// synchronous twin of `credentialsReplaced()`, reading the fingerprint cached by
+  /// `refreshCredentialState()` because the UI reads this during layout and cannot await.
+  /// False until that cache is populated, so a launch never enables the button on a guess.
+  private var authHoldIsSpent: Bool {
+    guard let rejected = heldCredentialFingerprint, let current = currentCredentialFingerprint else { return false }
+    return rejected != current
   }
 
   func isStale(olderThan age: TimeInterval = 60) -> Bool { Date().timeIntervalSince(snapshot.updatedAt) > age }
