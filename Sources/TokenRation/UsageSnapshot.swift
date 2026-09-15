@@ -93,4 +93,14 @@ enum ResetText {
     formatter.maximumUnitCount = 2
     return formatter.string(from: max(date.timeIntervalSince(reference), 0)) ?? ""
   }
+
+  /// The same countdown for a wait that can be shorter than a minute, such as the gap between
+  /// attempts. `short` allows no unit below a minute — right for a window that resets in hours,
+  /// wrong for the refresh button, whose commonest wait is two minutes and so would spend half
+  /// of it reading "0m". Rounds up, because a wait rendered as "0s" is no better.
+  static func wait(until date: Date, from reference: Date = Date()) -> String {
+    let seconds = Int(max(date.timeIntervalSince(reference), 0).rounded(.up))
+    guard seconds < 60 else { return short(until: date, from: reference) }
+    return "\(seconds)s"
+  }
 }

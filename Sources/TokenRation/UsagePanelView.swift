@@ -176,7 +176,7 @@ struct UsagePanelView: View {
         // leaves no animation running and needs no snap back to zero.
         .onChange(of: refreshing) { _, started in if started { withAnimation(.easeInOut(duration: 0.6)) { spin += 360 } } }.disabled(
           refreshing || heldUntil != nil
-        ).help(refreshHelp(refreshing: refreshing, heldUntil: heldUntil))
+        ).help(Self.refreshHelp(refreshing: refreshing, heldUntil: heldUntil, now: now))
       Button("Quit") { NSApplication.shared.terminate(nil) }
     }
   }
@@ -214,15 +214,16 @@ struct UsagePanelView: View {
     Label(text, systemImage: systemImage).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
   }
 
-  /// " · retry in 12m" while rate-limited, else "".
   /// Says why the refresh button is unavailable, since a disabled control explains nothing on
-  /// its own. Measured against the ticking clock, so a hover shows the time left now.
-  private func refreshHelp(refreshing: Bool, heldUntil: Date?) -> String {
+  /// its own. Takes the moment to measure against rather than reading the ticking clock itself,
+  /// so a hover shows the time left now and the wording can be asserted without a view.
+  static func refreshHelp(refreshing: Bool, heldUntil: Date?, now: Date) -> String {
     if refreshing { return "Refreshing…" }
     guard let heldUntil else { return "Refresh now" }
-    return "Next attempt in \(ResetText.short(until: heldUntil, from: now))"
+    return "Next attempt in \(ResetText.wait(until: heldUntil, from: now))"
   }
 
+  /// " · retry in 12m" while rate-limited, else "".
   private var retryText: String {
     guard let until = model?.rateLimitedUntil, until.timeIntervalSinceNow > 0 else { return "" }
     let formatter = DateComponentsFormatter()
