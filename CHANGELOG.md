@@ -11,6 +11,8 @@
 - A codex that closes its error output while it runs no longer keeps a processor core busy for the rest of the reading.
 - A codex installed with npm now starts when the `node` it runs on sits beside it or in Homebrew's directories. npm installs codex as a launcher for `node`, which TokenRation, started by macOS rather than from a shell, could not find; codex now runs with its own directory and Homebrew's on its `PATH`.
 - When codex exits before answering, as an npm-installed codex does when its `node` can't be found, the log now records its exit status. It used to record only that the usage response couldn't be read.
+- When Claude Code's credential can't be read from the Keychain, or is read but can't be used, the log now says why, rather than only "Not signed in to Claude Code.": the `security` tool's exit status and message, or what is wrong with the stored credential. A missing item, refused access, a locked Keychain and the empty credential Claude Code leaves after a failed refresh can now be told apart. The same failure is logged once.
+- A usage answer from Claude with nothing TokenRation can show now shows "Couldn't read the usage response." and keeps the last numbers. It used to count as a reading, which dropped the numbers and left the Claude tab showing "Loading usage…", while the log recorded a successful fetch with nothing in it.
 
 ## [1.0.4]
 
