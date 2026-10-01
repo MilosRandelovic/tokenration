@@ -86,7 +86,7 @@ private struct PanelRoot: View {
     if !providers.allMetrics.isEmpty {
       button.image = compositeImage(ids: ids)
       // Always render crisp (matching native icons). Dimming for staleness read as a
-      // rendering defect; staleness is surfaced in the popover instead.
+      // rendering defect; staleness is surfaced in the panel instead.
       button.appearsDisabled = false
     } else {
       // No data + a failure: a single status glyph — "waiting" vs. "error".

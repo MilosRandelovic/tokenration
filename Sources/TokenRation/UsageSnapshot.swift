@@ -1,7 +1,6 @@
 import Foundation
 
-/// How close a metric is to its limit. Drives the menu-bar tint — and only when it is
-/// *not* normal, so the common case stays a fully theme-adaptive template icon.
+/// How close a metric is to its limit. Drives the panel gauge's tint; the menu bar stays template images.
 enum Severity: Sendable {
   case normal, warning, critical
 
@@ -47,7 +46,6 @@ struct DisplayMetric: Identifiable, Sendable, Equatable {
   var resetsAt: Date?
 }
 
-/// A full reading: every metric plus when it was fetched.
 extension DisplayMetric {
   /// SF Symbol for a metric known only by its namespaced id (e.g. `codex:model:bengalfox`) —
   /// used when a pinned metric has no reading yet, and when rebuilding a stored one.
@@ -66,6 +64,7 @@ extension DisplayMetric {
   }
 }
 
+/// A full reading: every metric plus when it was fetched.
 struct UsageSnapshot: Sendable, Equatable {
   var metrics: [DisplayMetric]
   var updatedAt: Date
@@ -77,7 +76,7 @@ struct UsageSnapshot: Sendable, Equatable {
   func metric(id: String) -> DisplayMetric? { metrics.first { $0.id == id } }
 }
 
-/// Short "1h 19m"-style countdown, shared by the menu-bar icon and the popover so the two always
+/// Short "1h 19m"-style countdown, shared by the menu-bar icon and the panel so the two always
 /// agree. `RelativeDateTimeFormatter` is unsuitable here: it rounds to a single unit ("1 hr"),
 /// hiding the minutes.
 enum ResetText {

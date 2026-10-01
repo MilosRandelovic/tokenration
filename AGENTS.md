@@ -2,7 +2,7 @@
 
 ## What this is
 
-A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that shows Claude and Codex usage. No Xcode project — it builds with Swift Package Manager (`swift build` / `swift run`).
+A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that shows Claude and Codex usage. No Xcode project — it builds with Swift Package Manager (`swift build` / `swift run TokenRation`).
 
 ## Architecture
 
@@ -25,7 +25,7 @@ A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that show
 - `Preferences.swift` — `@Observable`; which metrics are pinned (UserDefaults).
 - `Sources/UsageState/` — shared library: the `usage.json` schema plus atomic read/write. Both the app and the MCP server depend on it; keep it free of app types.
 - `Sources/TokenRationMCP/` — the bundled stdio MCP server (one tool: `get_usage`).
-- `Makefile` — the entry point CI uses (`make test`, `make app`, `make release`).
+- `Makefile` — the entry point CI uses (`make lint`, `make test`, `make app`, `make release`).
 - `scripts/` — `common.sh` (shared bundle assembly + `SHORT_VERSION`), `build-app.sh` (ad-hoc local build), `release.sh` (distributable build + cask update). Nothing but the Makefile lives at the repo root.
 - `Tests/TokenRationTests/` — XCTest suite (run by CI on every pull request to `main`), one file per area, with the stand-ins and fixtures the areas share in `TestSupport.swift`. **A subprocess test that needs a child that hangs must use the hanging fixture, not `/bin/sleep`**: the exchange always appends `app-server`, so `sleep app-server` dies instantly with "invalid time interval" and the timeout/cancellation tests pass without exercising anything. The fixture is a uniquely-named script that ignores its arguments and runs until signalled (or, built with `ignoringTermination`, until killed), so `pgrep -f` can also assert the child was reaped. The types under test take what would otherwise reach this Mac's real state:
   - `UsageModel`: its `UserDefaults`, the reading it restores, a `NetworkMonitoring` and its log
@@ -60,7 +60,7 @@ A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that show
 - **Log decisions, not just errors.** `Log.write` records each attempt, skip (with the reason) and outcome to `~/Library/Logs/TokenRation.log`; pass a meaningful `trigger` so bursts can be traced to their source.
 - **Menu-bar icons must be template images** (`isTemplate = true`, drawn black) so macOS tints them for light/dark. No hardcoded colours there; severity colour lives in the panel gauges.
 - **Don't use `NSPopover`** for the dropdown — it can't reposition as the item resizes and its transient dismissal fights the status-item click. Use the owned `NSPanel` instead (smooth `setFrame` re-centering + explicit click-outside monitor).
-- **Metric ids are provider-namespaced** (`claude:session`, `codex:model:…`); `Preferences` has a one-shot migration for pre-Codex ids. Keep new ids namespaced or pinning breaks.
+- **Metric ids are provider-namespaced** (`claude:session`, `codex:model:…`); `Preferences` drops any pin whose prefix names no provider set up on this Mac, so an un-namespaced id is lost at the next launch. Keep new ids namespaced or pinning breaks.
 - **The update check is self-spaced.** It runs on a 30-minute persisted gap, driven by its own loop plus panel opens, and announces a version once. Launch and wake alone are not enough: a menu-bar app can stay up for days, so a check landing just before a release would otherwise be the last one of the session.
 - **A system control's appearance follows the linked SDK, not the running OS.** `LC_BUILD_VERSION`'s sdk field is what AppKit reads, and SwiftPM does not pass the SDK version to the linker — so ld stamps the deployment target and a plain `swift build` claims macOS 14. `assemble_bundle` passes `-platform_version` explicitly to record the real SDK; without it `make app` shows older styling than any release, and judging UI from such a build is misleading.
 - **Tests never reach this Mac's real state: the user's log, preferences, published reading, Keychain or notifications, the installed codex, the user's login profile, the network or this Mac's network path.** One that did would write the user's log, overwrite the reading the MCP server serves every agent session, or launch the real codex and call a live endpoint. Nothing a test builds defaults to any of them, with one exception: a `CodexUsageProvider` holds `CodexBinary.Resolver.shared`, whose roots are `Roots.thisMac` and whose shell is the user's, unless given another resolver, since that default is the one place the production resolver is named; a test that detects or fetches through a `CodexUsageProvider` therefore gives it a resolver on fixture roots and a fixture shell. Other code reaches them by construction rather than by default, and a test uses it only as each item says:
@@ -77,11 +77,22 @@ A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that show
 - Off-main work returns `Sendable` types; UI types are `@MainActor`.
 - Full descriptive names; comment intent, not change history.
 
+## Distribution
+
+Homebrew cask in the [homebrew-tokenration](https://github.com/MilosRandelovic/homebrew-tokenration) tap. `release.sh` builds the notarized zip and rewrites the cask's `version` + `sha256`.
+
+CI (`.github/workflows/`): `ci.yml` runs on pull requests to `main` — formatting (`make lint`), tests, and bundle assembly. `release.yml` runs on every push to `main`, takes the version from `SHORT_VERSION` in `scripts/common.sh`, and **fails if that version is already tagged**, so releasing is bumping that constant with its `CHANGELOG.md` section, as README's Releasing says, and a green run always means something shipped. It builds → tags → creates the GitHub release with `TokenRation.zip` → opens a PR against the tap updating the cask (`peter-evans/create-pull-request`). The tap's `cask-ci.yml` styles and installs the cask on that PR, so `main` only ever sees a verified cask.
+
+Signing and notarization are skipped when the Apple secrets are absent, so a release still publishes ad-hoc. That condition reads a job-level `env` boolean because `secrets` is not an available context in a step's `if:` — testing it there stops GitHub creating the run at all. `HOMEBREW_TOKENRATION_PAT` is required: it checks out the tap and opens the cask PR.
+
+Merging the cask PR touches only the tap, so it cannot re-trigger this workflow — the head-commit guard bump needs (its formula lives in the same repo) is unnecessary here.
+
 ## Build / test
 
 ```sh
 make build
-make test                       # pinning, reconciliation, backoff, timeouts, freshness
+make lint                       # what CI checks first: swift format lint --strict
+make test                       # pinning, reconciliation, backoff, timeouts, freshness, finding codex
 make format                     # CI fails on unformatted sources
 make app                        # TokenRation.app (ad-hoc, local)
 open TokenRation.app            # launch it detached — see below
@@ -91,13 +102,3 @@ make release                    # notarized (Developer ID) + updates the Homebre
 Formatting is enforced by `swift format` against `.swift-format` (2-space indent, stated explicitly there rather than left to the tool default). Wire types map snake_case JSON via `CodingKeys` rather than snake_case property names, so the `AlwaysUseLowerCamelCase` rule stays on.
 
 **Launch the bundle with `open`, not the executable inside it.** Running `TokenRation.app/Contents/MacOS/TokenRation &` makes the app a child of the invoking shell, so it gets SIGHUP and dies when that shell exits — silently, with no crash report and no `app terminating` log line, which looks exactly like a crash. `open` hands it to launchd (PPID 1) so it survives. Also note `build-app.sh` does `rm -rf` on the bundle, so rebuilding while an instance runs can invalidate the running code signature; quit it first.
-
-## Distribution
-
-Homebrew cask in the [homebrew-tokenration](https://github.com/MilosRandelovic/homebrew-tokenration) tap. `release.sh` builds the notarized zip and rewrites the cask's `version` + `sha256`.
-
-CI (`.github/workflows/`): `ci.yml` runs on pull requests — formatting (`swift format lint`), tests, and bundle assembly. `release.yml` runs on every push to `main`, takes the version from `SHORT_VERSION` in `scripts/common.sh`, and **fails if that version is already tagged**, so releasing is just bumping that constant and a green run always means something shipped. It tests → builds → tags → creates the GitHub release with `TokenRation.zip` → opens a PR against the tap updating the cask (`peter-evans/create-pull-request`). The tap's `cask-ci.yml` styles and installs the cask on that PR, so `main` only ever sees a verified cask.
-
-Signing and notarization are skipped when the Apple secrets are absent, so a release still publishes ad-hoc. That condition reads a job-level `env` boolean because `secrets` is not an available context in a step's `if:` — testing it there stops GitHub creating the run at all. `HOMEBREW_TOKENRATION_PAT` is required: it checks out the tap and opens the cask PR.
-
-Merging the cask PR touches only the tap, so it cannot re-trigger this workflow — the head-commit guard bump needs (its formula lives in the same repo) is unnecessary here.

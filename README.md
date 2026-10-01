@@ -50,7 +50,7 @@ make test                       # run the test suite
 make format                     # format the sources (CI fails on unformatted code)
 make app                        # TokenRation.app, ad-hoc signed (local use)
 make release                    # distributable build; notarized with a Developer ID cert
-swift run                       # run from source (dies with the shell — fine for a quick check)
+swift run TokenRation           # run from source (dies with the shell — fine for a quick check)
 ```
 
 Launch the built app with `open TokenRation.app`, or copy it to `/Applications` and start it from Finder/Spotlight. **Don't run `TokenRation.app/Contents/MacOS/TokenRation &` from a terminal** — that makes the app a child of the shell, so it is killed the moment the shell exits (silently, with no crash report). `open` detaches it properly. For a menu-bar app you want running all the time, add it to **System Settings ▸ General ▸ Login Items**.
@@ -90,7 +90,7 @@ Sources/TokenRationMCP/              the bundled stdio MCP server
 
 ## Releasing
 
-Bump `SHORT_VERSION` in `scripts/common.sh` and push to `main`. The release workflow tests, builds, tags, publishes the GitHub release with `TokenRation.zip`, and opens a pull request against the [tap](https://github.com/MilosRandelovic/homebrew-tokenration) updating the cask's version and checksum. Merging that PR makes the release installable.
+Bump `SHORT_VERSION` in `scripts/common.sh`, add that version's section to `CHANGELOG.md`, and merge to `main`. The release workflow builds, tags, publishes the GitHub release with `TokenRation.zip`, and opens a pull request against the [tap](https://github.com/MilosRandelovic/homebrew-tokenration) updating the cask's version and checksum. Merging that PR makes the release installable.
 
 The job **fails if the version is already tagged**, so every push to `main` either publishes a release or goes red — a green run always means something shipped.
 
