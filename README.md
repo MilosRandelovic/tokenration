@@ -60,14 +60,19 @@ Launch the built app with `open TokenRation.app`, or copy it to `/Applications` 
 Sources/TokenRation/
 ├── Main.swift · AppDelegate.swift   entry point; wires providers + prefs + status bar
 ├── Provider.swift                   the two providers: detection + per-provider icon family
-├── ProvidersModel.swift             one UsageModel per detected provider; tab selection
+├── ProvidersModel.swift             one UsageModel per provider shown; tab selection
 ├── UsageModel.swift                 polling loop + state (per-provider, persisted backoff)
 ├── ClaudeUsageProvider.swift        /api/oauth/usage → DisplayMetrics
 ├── CodexUsageProvider.swift         codex app-server JSON-RPC → DisplayMetrics
 ├── CodexBinary.swift                locates the codex executable
+├── UsageProviding.swift             the provider protocol and UsageError
 ├── KeychainToken.swift              reads the Claude token via /usr/bin/security
+├── Preferences.swift                which metrics are pinned
 ├── StatusBarController.swift        menu-bar item + the custom dropdown panel
 ├── UsagePanelView.swift             SwiftUI panel: tabs, meters, pins, states, About
+├── UpdateChecker.swift              the GitHub release check
+├── Log.swift                        the diagnostics log
+├── RestoredSnapshot.swift           the last published reading, shown at a cold start
 └── UsageSnapshot.swift              value types the UI renders
 
 Sources/UsageState/                  shared state file format (app writes, MCP server reads)

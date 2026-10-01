@@ -8,13 +8,16 @@ A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that show
 
 - `Main.swift` — `@main`; starts the AppKit menu-bar app.
 - `AppDelegate.swift` — wires providers + prefs + status bar; sleep/wake handling.
-- `Provider.swift` — the closed two-provider set: detection (filesystem only, never prompts) and each provider's **distinct icon family**, which is how the menu bar disambiguates them.
-- `ProvidersModel.swift` — one `UsageModel` per detected provider + the panel's selected tab.
-- `UsageModel.swift` — `@Observable @MainActor`; polling loop, rate-limit backoff, holds the snapshot. One instance per provider; **persisted keys are provider-suffixed** so budgets and backoffs never collide.
-- `ClaudeUsageProvider.swift` — `GET /api/oauth/usage` → decode → `[DisplayMetric]`.
+- `Provider.swift` — the closed two-provider set: detection, run once per launch through `Provider.detectAll(home:codex:)` (filesystem checks, Codex counting as set up whenever its credentials exist; Codex's check, in `CodexUsageProvider.detectSetUp()`, also starts a background search for a binary, which falls back to a bounded login-shell lookup and which the first fetch waits for; never itself prompts for Keychain access), and each provider's **distinct icon family**, which is how the menu bar disambiguates them.
+- `ProvidersModel.swift` — one `UsageModel` per provider the panel shows (those set up on this Mac, or Claude alone) + the selected tab.
+- `UsageModel.swift` — `@Observable @MainActor`; polling loop, rate-limit backoff, holds the snapshot. One instance per provider; **persisted keys are provider-suffixed** so budgets and backoffs never collide. The file also holds `NetworkMonitoring`, with the app's `SystemNetworkMonitor`.
+- `ClaudeUsageProvider.swift` — `GET /api/oauth/usage` → decode → `[DisplayMetric]`. The file also holds `ClaudeCredentials`, with the app's `KeychainCredentials`.
 - `CodexUsageProvider.swift` — spawns `codex app-server` and calls `account/rateLimits/read` over JSON-RPC. Don't switch this to HTTP: `chatgpt.com/backend-api/codex/usage` returns 403 from a bot-protection page even with a valid token, and the local CLI costs no quota.
 - `KeychainToken.swift` — reads the token by shelling out to `/usr/bin/security`.
+- `Log.swift` — `Log.write`, which appends to `~/Library/Logs/TokenRation.log` on a background queue and rotates the file past a size cap.
+- `UpdateChecker.swift` — the self-spaced GitHub release check (see below). The file also holds `UpdateNotifying`, with the app's `SystemUpdateNotifier`.
 - `UsageSnapshot.swift` — value types the UI renders (`DisplayMetric`, `Severity`).
+- `RestoredSnapshot.swift` — rebuilds the last published reading from `usage.json`, so a cold start shows numbers rather than a spinner.
 - `StatusBarController.swift` — one `NSStatusItem` (all pinned metrics composited into one template image) plus a custom `NSPanel` dropdown it positions and dismisses itself.
 - `UsagePanelView.swift` — SwiftUI panel (gauges, pin toggles, loading/rate-limited states, About).
 - `Preferences.swift` — `@Observable`; which metrics are pinned (UserDefaults).
@@ -22,7 +25,17 @@ A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that show
 - `Sources/TokenRationMCP/` — the bundled stdio MCP server (one tool: `get_usage`).
 - `Makefile` — the entry point CI uses (`make test`, `make app`, `make release`).
 - `scripts/` — `common.sh` (shared bundle assembly + `SHORT_VERSION`), `build-app.sh` (ad-hoc local build), `release.sh` (distributable build + cask update). Nothing but the Makefile lives at the repo root.
-- `Tests/TokenRationTests/` — XCTest suite (run by CI on every push and before release signing). **Subprocess tests must use the hanging fixture, not `/bin/sleep`**: the exchange always appends `app-server`, so `sleep app-server` dies instantly with "invalid time interval" and the timeout/cancellation tests pass without exercising anything. The fixture is a uniquely-named script that ignores its arguments and runs until signalled, so `pgrep -f` can also assert the child was reaped. `UsageModel` and `Preferences` take an injectable `UserDefaults` so persistence across "relaunch" can be exercised without touching the real domain; `CodexUsageProvider.readRateLimits` is internal so the timeout path is testable.
+- `Tests/TokenRationTests/` — XCTest suite (run by CI on every pull request to `main`), one file per area, with the stand-ins and fixtures the areas share in `TestSupport.swift`. **A subprocess test that needs a child that hangs must use the hanging fixture, not `/bin/sleep`**: the exchange always appends `app-server`, so `sleep app-server` dies instantly with "invalid time interval" and the timeout/cancellation tests pass without exercising anything. The fixture is a uniquely-named script that ignores its arguments and runs until signalled (or, built with `ignoringTermination`, until killed), so `pgrep -f` can also assert the child was reaped. The types under test take what would otherwise reach this Mac's real state:
+  - `UsageModel`: its `UserDefaults`, the reading it restores, a `NetworkMonitoring` and its log
+  - `Preferences`: its `UserDefaults` and its log
+  - `UpdateChecker`: its `UserDefaults`, its `URLSession` (as the Swift standards ask of every client), an `UpdateNotifying` for the notification center, the version it compares releases with (`currentVersion`) and its log
+  - `ClaudeUsageProvider`: its `URLSession` and a `ClaudeCredentials` for the Keychain
+  - `KeychainCredentials`: the tool it reads the Keychain through and its log
+  - `ProvidersModel`: the reading it restores, how it builds each provider and each model's network monitor, the defaults its models persist to, its log and where it publishes
+  - `CodexBinary.Resolver`: its roots, its login shell and its log
+  - `CodexUsageProvider`: a resolver, `Resolver.shared` unless given another: the one exception to the rule "Tests never reach this Mac's real state" below
+
+  `makeDefaults()` keeps each test's defaults suite in a directory of the run's own, which `DefaultsSuitesCleanup`, the XCTest observer installed when that directory is first made, removes when the run ends. What a test must not reach and the code it keeps away from are set out in the rule "Tests never reach this Mac's real state" below. `CodexUsageProvider.readRateLimits` is internal so the timeout path is testable, and its `beforeLaunch` hook, nil in production, lets a test cancel between the exchange's setup and the launch.
 
 ## Conventions / gotchas
 
@@ -42,6 +55,17 @@ A native macOS **menu-bar app** (SwiftUI + AppKit, Swift 6, macOS 14+) that show
 - **Metric ids are provider-namespaced** (`claude:session`, `codex:model:…`); `Preferences` has a one-shot migration for pre-Codex ids. Keep new ids namespaced or pinning breaks.
 - **The update check is self-spaced.** It runs on a 30-minute persisted gap, driven by its own loop plus panel opens, and announces a version once. Launch and wake alone are not enough: a menu-bar app can stay up for days, so a check landing just before a release would otherwise be the last one of the session.
 - **A system control's appearance follows the linked SDK, not the running OS.** `LC_BUILD_VERSION`'s sdk field is what AppKit reads, and SwiftPM does not pass the SDK version to the linker — so ld stamps the deployment target and a plain `swift build` claims macOS 14. `assemble_bundle` passes `-platform_version` explicitly to record the real SDK; without it `make app` shows older styling than any release, and judging UI from such a build is misleading.
+- **Tests never reach this Mac's real state: the user's log, preferences, published reading, Keychain or notifications, the installed codex, the user's login profile, the network or this Mac's network path.** One that did would write the user's log, overwrite the reading the MCP server serves every agent session, or launch the real codex and call a live endpoint. Nothing a test builds defaults to any of them, with one exception: a `CodexUsageProvider` holds `CodexBinary.Resolver.shared`, whose roots are `Roots.thisMac` and whose shell is the user's, unless given another resolver, since that default is the one place the production resolver is named; a test that detects or fetches through a `CodexUsageProvider` therefore gives it a resolver on fixture roots and a fixture shell. Other code reaches them by construction rather than by default, and a test uses it only as each item says:
+  - `Log.write` writes the user's log, and `UsageStateStore`'s `read()` and `write(_:)` the published reading: a test calls none of them.
+  - `KeychainToken.securityTool` reads the Keychain: a test reads through a fixture tool instead, as `KeychainCredentials` and `KeychainToken.read(service:tool:onFailure:)` take one.
+  - `SystemUpdateNotifier` reaches the user's notifications, only through its methods: a test calls none of them.
+  - `ProvidersModel.makeProvider` builds the app's providers, Claude's on the network and the Keychain and Codex's on the shared resolver: a test calls it only to inspect what it builds.
+  - `Roots.thisMac` and `Resolver.shared` point at this Mac's install locations, and the resolver also reaches the user's login shell and the app's log: a test only reads their locations and configuration, or compares identity.
+  - `UserDefaults.standard`, and a defaults suite named by anything but an absolute path, write the user's `~/Library/Preferences`, where a defaults suite per test per run stays for good: a test takes every `UserDefaults` from `makeDefaults()`, and looks in `~/Library/Preferences` only to check that its own defaults suite's file is not there.
+  - `URLSession.shared` reaches the network: a test gives each client a session from `StubURLProtocol.session(answering:)`.
+  - `SystemNetworkMonitor` reads this Mac's network path: a test gives each model a `StubNetwork`, and each `ProvidersModel` a `makeNetworkMonitor` that makes one, so an offline Mac runs the suite as a connected one does; of `SystemNetworkMonitor` itself, a test calls only its `isOffline(_:)` rule, which reads no network path.
+
+  The shells the suite starts read their system startup files, which none of them can skip while still reading the fixture profile under test: every zsh reads `/etc/zshenv` when it exists, and a login bash `/etc/profile`. Both are the system's files and fall outside the user's login profile.
 - Off-main work returns `Sendable` types; UI types are `@MainActor`.
 - Full descriptive names; comment intent, not change history.
 
