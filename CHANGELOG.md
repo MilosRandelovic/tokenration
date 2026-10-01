@@ -2,18 +2,14 @@
 
 ## [1.1.0]
 
-- Codex keeps reporting when an app or extension update moves the codex binary (the ChatGPT app had moved it by version 26.924). TokenRation used to hold the path it found at launch until it was restarted, and it now also looks in ChatGPT's current location.
-- When codex goes missing after TokenRation found it, or the path found cannot be launched, the Codex tab says "Couldn't find or start the Codex CLI." It used to say "Not signed in to Claude Code." — naming the wrong product and raising the sign-in warning over something no sign-in fixes — and it now backs off as for any other error, retrying within minutes at first, where "Not signed in" waits a quarter of an hour each time. A Codex tab already in that wait when TokenRation is upgraded finishes it first, and the failures it has counted carry over, so while codex stays missing its retries can be as far apart as half an hour from the start.
-- A Mac signed in to Codex shows the Codex tab even when codex can't be found at launch, and the tab says "Couldn't find or start the Codex CLI." Alongside Claude Code, TokenRation used to show no Codex tab at all, and without Claude Code it fell back to a Claude tab saying "Not signed in to Claude Code." A codex installed later in the ChatGPT app, the VS Code extension or Homebrew is then picked up without a relaunch; one that only your login profile's `PATH` has needs a relaunch.
-- With several versions of the VS Code extension installed, TokenRation now picks the newest one's codex when it looks for one. Versions were compared as text, so 26.1015 sorted below 26.908.
-- Looking for codex through the login shell now gives up after a few seconds, so a shell profile that hangs, or leaves a background process running, can no longer hang TokenRation. With a profile slower than that, a codex only the login shell can find is missed at that launch, and at every launch while the profile stays that slow; the Codex tab still shows, and the log says why. The lookup also runs in the background now, so TokenRation's launch never waits for it; only the first Codex reading does.
-- A shell profile that prints a greeting, a status line or any amount of output no longer hides a codex that only the login shell can find.
-- A codex that closes its error output while it runs no longer keeps a processor core busy for the rest of the reading.
-- A codex installed with npm now starts when the `node` it runs on sits beside it or in Homebrew's directories. npm installs codex as a launcher for `node`, which TokenRation, started by macOS rather than from a shell, could not find; codex now runs with its own directory and Homebrew's on its `PATH`.
-- When codex exits before answering, as an npm-installed codex does when its `node` can't be found, the log now records its exit status. It used to record only that the usage response couldn't be read.
-- When Claude Code's credential can't be read from the Keychain, or is read but can't be used, the log now says why, rather than only "Not signed in to Claude Code.": the `security` tool's exit status and message, or what is wrong with the stored credential. A missing item, refused access, a locked Keychain and the empty credential Claude Code leaves after a failed refresh can now be told apart. The same failure is logged once.
-- While the Mac is offline, the refresh button is disabled and its tooltip says "Offline". It used to take a click that did nothing.
-- A usage answer from Claude with nothing TokenRation can show now shows "Couldn't read the usage response." and keeps the last numbers. It used to count as a reading, which dropped the numbers and left the Claude tab showing "Loading usage…", while the log recorded a successful fetch with nothing in it.
+- Codex keeps working when the ChatGPT app or VS Code extension moves its codex binary, including ChatGPT 26.924's new location.
+- A missing codex says "Couldn't find or start the Codex CLI." instead of "Not signed in to Claude Code.", and retries on the normal schedule.
+- The Codex tab shows whenever you're signed in to Codex, even before codex is found.
+- Launch no longer waits for your shell profile while looking for codex.
+- A codex installed with npm now starts.
+- An unreadable Claude usage answer shows an error and keeps the last numbers.
+- The refresh button is disabled while offline.
+- The log says why a codex launch or a Keychain read failed.
 
 ## [1.0.4]
 
