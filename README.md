@@ -8,7 +8,16 @@ Pin one metric for a single icon, or several to stack them. Each provider uses a
 
 ## Install
 
-Requires macOS 14+ and at least one of the Claude Code or Codex CLIs, signed in. Whichever are present are detected automatically.
+Requires macOS 14+ and at least one of the Claude Code or Codex CLIs, signed in. Claude Code counts as set up once its `~/.claude` directory exists, and Codex once you have signed in to it, which by default leaves its credentials in `~/.codex/auth.json`. Whichever are set up are detected automatically when TokenRation launches, so one set up later appears after a relaunch. Once Codex is set up, TokenRation looks for `codex` in:
+
+- the ChatGPT app in `/Applications`
+- the VS Code extension
+- Homebrew
+- a `PATH` your login profile sets, read through your login shell when that is zsh or bash; with tcsh or csh, this `PATH` is not searched at all
+
+A codex installed later in the ChatGPT app, the VS Code extension or Homebrew is found without a relaunch. One on a profile-set `PATH` is found at the next launch, if the profile answers within the few seconds TokenRation waits.
+
+A codex that only `.zshrc` or `.bashrc` puts on `PATH`, as nvm usually arranges, is not found unless a file your login shell reads, such as `~/.zprofile` or `~/.bash_profile`, puts its directory on `PATH` too. One installed with npm starts when its `node` sits beside it or in Homebrew's directories.
 
 ```sh
 brew tap MilosRandelovic/tokenration

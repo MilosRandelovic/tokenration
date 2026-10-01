@@ -5,6 +5,7 @@ import Foundation
 protocol UsageProviding: Sendable {
   /// Which source this reads — used to namespace persisted state and log lines.
   var provider: Provider { get }
+  /// A reading with at least one metric; an answer with nothing to show throws `UsageError.badResponse`.
   func fetch() async throws -> UsageSnapshot
 
   /// A marker for the credentials this provider would use right now — enough to notice they
@@ -28,13 +29,20 @@ extension UsageProviding {
   func credentialProblem() async -> UsageError? { nil }
 }
 
-/// Failures shared by the Keychain reader and the live provider, phrased for the UI.
+/// Every provider's failures, phrased for the UI. A case worded for one provider is used by that
+/// provider only.
 enum UsageError: LocalizedError {
+  /// Claude's credential is missing. The wording names Claude Code, so another provider reports
+  /// its own failures through its own case rather than borrowing this one.
   case notSignedIn
+  /// Claude's session has expired. Worded for Claude Code, like `notSignedIn`.
   case sessionExpired
   case rateLimited(retryAfter: TimeInterval?)
   case requestFailed(Int)
   case badResponse
+  /// The `codex` executable could not be found or started. Not an authentication failure: nothing
+  /// the user signs in to fixes it, so it takes the ordinary error backoff, not the sign-in one.
+  case codexUnavailable
 
   var errorDescription: String? {
     switch self {
@@ -43,6 +51,7 @@ enum UsageError: LocalizedError {
     case .rateLimited: "Rate-limited; retrying soon."
     case .requestFailed(let code): "Usage request failed (HTTP \(code))."
     case .badResponse: "Couldn't read the usage response."
+    case .codexUnavailable: "Couldn't find or start the Codex CLI."
     }
   }
 }

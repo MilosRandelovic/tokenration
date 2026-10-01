@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0]
+
+- Codex keeps reporting when an app or extension update moves the codex binary (the ChatGPT app had moved it by version 26.924). TokenRation used to hold the path it found at launch until it was restarted, and it now also looks in ChatGPT's current location.
+- When codex goes missing after TokenRation found it, or the path found cannot be launched, the Codex tab says "Couldn't find or start the Codex CLI." It used to say "Not signed in to Claude Code." — naming the wrong product and raising the sign-in warning over something no sign-in fixes — and it now backs off as for any other error, retrying within minutes at first, where "Not signed in" waits a quarter of an hour each time. A Codex tab already in that wait when TokenRation is upgraded finishes it first, and the failures it has counted carry over, so while codex stays missing its retries can be as far apart as half an hour from the start.
+- A Mac signed in to Codex shows the Codex tab even when codex can't be found at launch, and the tab says "Couldn't find or start the Codex CLI." Alongside Claude Code, TokenRation used to show no Codex tab at all, and without Claude Code it fell back to a Claude tab saying "Not signed in to Claude Code." A codex installed later in the ChatGPT app, the VS Code extension or Homebrew is then picked up without a relaunch; one that only your login profile's `PATH` has needs a relaunch.
+- With several versions of the VS Code extension installed, TokenRation now picks the newest one's codex when it looks for one. Versions were compared as text, so 26.1015 sorted below 26.908.
+- Looking for codex through the login shell now gives up after a few seconds, so a shell profile that hangs, or leaves a background process running, can no longer hang TokenRation. With a profile slower than that, a codex only the login shell can find is missed at that launch, and at every launch while the profile stays that slow; the Codex tab still shows, and the log says why. The lookup also runs in the background now, so TokenRation's launch never waits for it; only the first Codex reading does.
+- A shell profile that prints a greeting, a status line or any amount of output no longer hides a codex that only the login shell can find.
+- A codex that closes its error output while it runs no longer keeps a processor core busy for the rest of the reading.
+- A codex installed with npm now starts when the `node` it runs on sits beside it or in Homebrew's directories. npm installs codex as a launcher for `node`, which TokenRation, started by macOS rather than from a shell, could not find; codex now runs with its own directory and Homebrew's on its `PATH`.
+- When codex exits before answering, as an npm-installed codex does when its `node` can't be found, the log now records its exit status. It used to record only that the usage response couldn't be read.
+
 ## [1.0.4]
 
 - The refresh button's tooltip counts down in seconds under a minute. It previously allowed no unit below a minute, which suits a window that resets in hours but not a button whose commonest wait is the two-minute gap between attempts — so the last minute of every hold read "Next attempt in 0m". Reset countdowns are unchanged.

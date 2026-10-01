@@ -12,10 +12,33 @@ struct CodexUsageProvider: UsageProviding {
 
   /// Hard ceiling for the whole exchange — spawn, initialize, query, parse.
   var timeout: TimeInterval = 20
+  /// How the executable is found: through `forFetch()` for a fetch, and the search `startDetection()` starts
+  /// for launch detection. The default is the one production resolver; a test supplies its own.
+  var binaryResolver = CodexBinary.Resolver.shared
+
+  /// Whether Codex is set up on this Mac: its credentials file exists, which signing in to Codex leaves by default.
+  /// A binary is then looked for in the background (`CodexBinary.Resolver.startDetection()`), whose result
+  /// does not decide the answer: a Mac signed in to Codex shows the Codex tab even with no codex yet, which
+  /// then reports `codexUnavailable` until one turns up where a fetch looks. The search runs all the same
+  /// because it is the one that may ask the login shell, and what the shell answers there is the only way a
+  /// fetch ever gets a codex only the shell can find. The first fetch waits for it, so it starts from what was
+  /// found, and the log says where codex is, or that none was found. The credentials come first, so a Mac
+  /// without Codex never starts the login shell.
+  func detectSetUp() -> Bool {
+    guard FileManager.default.fileExists(atPath: binaryResolver.roots.home.appendingPathComponent(".codex/auth.json").path) else {
+      return false
+    }
+    binaryResolver.startDetection()
+    return true
+  }
 
   func fetch() async throws -> UsageSnapshot {
-    guard let binary = CodexBinary.resolve() else { throw UsageError.notSignedIn }
-    let payload = try await Self.readRateLimits(binary: binary, timeout: timeout)
+    await binaryResolver.detectionFinished()
+    guard let binary = binaryResolver.forFetch() else { throw UsageError.codexUnavailable }
+    let searchPath = Self.searchPath(
+      for: binary, binDirectories: binaryResolver.roots.binDirectories, inherited: ProcessInfo.processInfo.environment["PATH"])
+    // The resolver's sink is the provider's: what the exchange logs lands beside what the search decided.
+    let payload = try await Self.readRateLimits(binary: binary, timeout: timeout, searchPath: searchPath, log: binaryResolver.log)
     let metrics = Self.metrics(from: payload)
     guard !metrics.isEmpty else { throw UsageError.badResponse }
     return UsageSnapshot(metrics: metrics, updatedAt: Date())
@@ -23,9 +46,44 @@ struct CodexUsageProvider: UsageProviding {
 
   // MARK: - JSON-RPC exchange
 
+  /// The `PATH` codex runs with: the found binary's own directory, then Homebrew's bin directories, ahead
+  /// of TokenRation's own. Started by launchd, TokenRation has only the system directories, so a codex
+  /// that is a launcher for an interpreter would never start: npm installs codex as `#!/usr/bin/env node`,
+  /// and Homebrew's node, nvm and a custom npm prefix beside Homebrew's node each keep `node` in one of
+  /// these directories.
+  static func searchPath(for binary: String, binDirectories: [URL], inherited: String?) -> String {
+    var seen = Set<String>()
+    let directories =
+      [URL(fileURLWithPath: binary).deletingLastPathComponent().path] + binDirectories.map(\.path)
+      + (inherited?.split(separator: ":").map(String.init) ?? [])
+    return directories.filter { seen.insert($0).inserted }.joined(separator: ":")
+  }
+
+  /// A reader for a pipe: `onChunk` gets each chunk as it arrives, and at end-of-file the reader clears
+  /// itself before calling `onEnd`, because a `readabilityHandler` left installed there is called again and
+  /// again. Called only when bytes are ready or at end-of-file, so it never blocks.
+  static func reader(onChunk: @escaping @Sendable (_ chunk: Data) -> Void, onEnd: @escaping @Sendable () -> Void)
+    -> @Sendable (_ handle: FileHandle) -> Void
+  {
+    { handle in
+      let chunk = handle.availableData
+      guard !chunk.isEmpty else {
+        handle.readabilityHandler = nil
+        onEnd()
+        return
+      }
+      onChunk(chunk)
+    }
+  }
+
   /// Internal (not private) so tests can drive the timeout/cancellation paths directly.
-  static func readRateLimits(binary: String, timeout: TimeInterval) async throws -> RateLimitsResult {
-    let exchange = CodexExchange(binary: binary)
+  /// `searchPath`, when given, replaces the child's `PATH`; the exchange otherwise inherits TokenRation's.
+  /// `beforeLaunch`, nil in production, runs just before the child is launched, so a test can cancel there.
+  static func readRateLimits(
+    binary: String, timeout: TimeInterval, searchPath: String? = nil, log: @escaping @Sendable (_ message: String) -> Void,
+    beforeLaunch: (@Sendable () -> Void)? = nil
+  ) async throws -> RateLimitsResult {
+    let exchange = CodexExchange(binary: binary, searchPath: searchPath, log: log, beforeLaunch: beforeLaunch)
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in exchange.start(timeout: timeout, continuation: continuation) }
     } onCancel: {
@@ -218,6 +276,9 @@ struct CodexUsageProvider: UsageProviding {
 /// never resumes, the child is never reaped, and the provider stays stuck "refreshing".
 /// Here a watchdog fires independently of any output, and every exit path terminates and reaps
 /// the child exactly once.
+///
+/// `@unchecked Sendable` because its callbacks run on Foundation's queues: `continuation`, `buffer` and
+/// `isFinished` are read and written only under `lock`, and `finish` resumes the continuation at most once.
 private final class CodexExchange: @unchecked Sendable {
   /// Writing to a child that has already exited raises SIGPIPE, which terminates this process
   /// by default instead of returning an error. Ignoring it once turns a dead `codex app-server`
@@ -232,10 +293,19 @@ private final class CodexExchange: @unchecked Sendable {
   private var continuation: CheckedContinuation<CodexUsageProvider.RateLimitsResult, Error>?
   private var buffer = Data()
   private var isFinished = false
+  private let log: @Sendable (_ message: String) -> Void
+  private let beforeLaunch: (@Sendable () -> Void)?
 
-  init(binary: String) {
+  init(binary: String, searchPath: String?, log: @escaping @Sendable (_ message: String) -> Void, beforeLaunch: (@Sendable () -> Void)?) {
+    self.log = log
+    self.beforeLaunch = beforeLaunch
     _ = Self.ignoreBrokenPipes
     process.executableURL = URL(fileURLWithPath: binary)
+    if let searchPath {
+      var environment = ProcessInfo.processInfo.environment
+      environment["PATH"] = searchPath
+      process.environment = environment
+    }
     process.arguments = ["app-server"]
     process.standardInput = input
     process.standardOutput = output
@@ -252,22 +322,12 @@ private final class CodexExchange: @unchecked Sendable {
     self.continuation = continuation
     lock.unlock()
 
-    output.fileHandleForReading.readabilityHandler = { [weak self] handle in
-      // Called only when bytes are ready (or at EOF), so this never blocks.
-      let chunk = handle.availableData
-      guard !chunk.isEmpty else {
-        self?.finish(.failure(UsageError.badResponse))  // EOF without an answer
-        return
-      }
-      self?.consume(chunk)
-    }
-    // Drain stderr so a chatty child can't fill the pipe buffer and deadlock.
-    errors.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
+    process.terminationHandler = { [weak self] _ in self?.finish(.failure(UsageError.badResponse), childEnded: true) }
 
-    process.terminationHandler = { [weak self] _ in self?.finish(.failure(UsageError.badResponse)) }
-
+    beforeLaunch?()
     do { try process.run() } catch {
-      finish(.failure(UsageError.notSignedIn))
+      log("[codex] could not start \(process.executableURL?.path ?? "codex"): \(error.localizedDescription)")
+      finish(.failure(UsageError.codexUnavailable))
       return
     }
 
@@ -281,6 +341,20 @@ private final class CodexExchange: @unchecked Sendable {
       terminateAndReap()
       return
     }
+
+    // The readers are installed only once the child exists. A launch that fails inside the
+    // spawn (a missing interpreter, a truncated binary) closes the pipes' write ends, and a
+    // reader already in place takes that EOF for a child that answered nothing, reporting a bad
+    // response instead of a codex that could not start. Each reader clears itself at EOF, where
+    // it would otherwise be called again and again. `finish` clears them too, but a `finish`
+    // that runs between the re-check above and this install finds none to clear, so each reader
+    // must clear itself. That self-clear is what makes this race safe, and a test pins it directly,
+    // so unlike a cancellation before `run()`, which `beforeLaunch` steers, this race gets no hook.
+    output.fileHandleForReading.readabilityHandler = CodexUsageProvider.reader(
+      onChunk: { [weak self] in self?.consume($0) },
+      onEnd: { [weak self] in self?.finish(.failure(UsageError.badResponse), childEnded: true) })
+    // Drain stderr so a chatty child can't fill the pipe buffer and deadlock.
+    errors.fileHandleForReading.readabilityHandler = CodexUsageProvider.reader(onChunk: { _ in }, onEnd: {})
 
     send(
       #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"TokenRation","title":"TokenRation","version":"1"}}}"#)
@@ -315,8 +389,9 @@ private final class CodexExchange: @unchecked Sendable {
     }
   }
 
-  /// Resume the continuation at most once, then tear the child down.
-  func finish(_ result: Result<CodexUsageProvider.RateLimitsResult, Error>) {
+  /// Resume the continuation at most once, then tear the child down. `childEnded` says the child exited or closed
+  /// its output before answering, rather than timing out, being cancelled or answering: its exit is then logged.
+  func finish(_ result: Result<CodexUsageProvider.RateLimitsResult, Error>, childEnded: Bool = false) {
     lock.lock()
     if isFinished {
       lock.unlock()
@@ -332,15 +407,35 @@ private final class CodexExchange: @unchecked Sendable {
     process.terminationHandler = nil
     try? input.fileHandleForWriting.close()
 
-    terminateAndReap()
+    terminateAndReap(reportingExit: childEnded)
     pending?.resume(with: result)
   }
 
   /// Terminate the child if it ever started, and reap it off the caller's thread so a slow
   /// exit can't stall the continuation. Safe to call more than once.
-  private func terminateAndReap() {
-    guard process.isRunning else { return }
+  ///
+  /// With `reportingExit`, a child that ended on its own before answering has its exit logged. Without that
+  /// line the log would say only that the response could not be read, for a launcher whose interpreter is
+  /// missing (it exits 127) as for a wrapper whose target has gone.
+  private func terminateAndReap(reportingExit: Bool = false) {
+    let report: @Sendable (Process) -> Void = { [log, path = process.executableURL?.path ?? "codex"] ended in
+      switch ended.terminationReason {
+      case .exit: log("[codex] \(path) exited with status \(ended.terminationStatus) before answering")
+      case .uncaughtSignal: log("[codex] \(path) was ended by signal \(ended.terminationStatus) before answering")
+      @unknown default: log("[codex] \(path) ended before answering")
+      }
+    }
+    guard process.isRunning else {
+      // A process that was never launched has no pid, and no exit to report.
+      if reportingExit, process.processIdentifier != 0 { report(process) }
+      return
+    }
     process.terminate()
-    DispatchQueue.global(qos: .utility).async { [process] in process.waitUntilExit() }
+    DispatchQueue.global(qos: .utility).async { [process] in
+      process.waitUntilExit()
+      // Its end-of-file can arrive before its exit is noticed, so a child reaped here may have died on its own,
+      // by an exit or a signal of its own; only the SIGTERM just sent is TokenRation's.
+      if reportingExit, !(process.terminationReason == .uncaughtSignal && process.terminationStatus == SIGTERM) { report(process) }
+    }
   }
 }
