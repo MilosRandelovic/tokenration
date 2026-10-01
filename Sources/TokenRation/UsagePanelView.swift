@@ -164,8 +164,9 @@ struct UsagePanelView: View {
       // A refresh asked for during a hold is refused by the guards in `refresh`, so offering it
       // would be a button that accepts the click and does nothing — which reads as a broken
       // control rather than as a deliberate wait. The panel already gives the reason above; the
-      // tooltip gives the timing.
+      // tooltip gives the timing. Offline is refused the same way, with no deadline to give.
       let heldUntil = model?.heldUntil
+      let offline = model?.isOffline == true
       Button {
         Task { await model?.refresh(trigger: "manual") }
       } label: {
@@ -175,8 +176,8 @@ struct UsagePanelView: View {
         // when the fetch ends, and one that fails to cancel spins forever; accumulating the angle
         // leaves no animation running and needs no snap back to zero.
         .onChange(of: refreshing) { _, started in if started { withAnimation(.easeInOut(duration: 0.6)) { spin += 360 } } }.disabled(
-          refreshing || heldUntil != nil
-        ).help(Self.refreshHelp(refreshing: refreshing, heldUntil: heldUntil, now: now))
+          refreshing || offline || heldUntil != nil
+        ).help(Self.refreshHelp(refreshing: refreshing, offline: offline, heldUntil: heldUntil, now: now))
       Button("Quit") { NSApplication.shared.terminate(nil) }
     }
   }
@@ -217,8 +218,10 @@ struct UsagePanelView: View {
   /// Says why the refresh button is unavailable, since a disabled control explains nothing on
   /// its own. Takes the moment to measure against rather than reading the ticking clock itself,
   /// so a hover shows the time left now and the wording can be asserted without a view.
-  static func refreshHelp(refreshing: Bool, heldUntil: Date?, now: Date) -> String {
+  static func refreshHelp(refreshing: Bool, offline: Bool, heldUntil: Date?, now: Date) -> String {
     if refreshing { return "Refreshing…" }
+    // A reconnect refreshes by itself, so the wait offline is for the network, not for a deadline.
+    if offline { return "Offline" }
     guard let heldUntil else { return "Refresh now" }
     return "Next attempt in \(ResetText.wait(until: heldUntil, from: now))"
   }

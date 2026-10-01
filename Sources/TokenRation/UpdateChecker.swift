@@ -2,6 +2,31 @@ import Foundation
 import Observation
 import UserNotifications
 
+/// What `UpdateChecker` needs of the user-notification center. The app passes `SystemUpdateNotifier`; a
+/// test passes its own, since the real center needs a bundled app, which the test runner is not, and
+/// would put a notification in front of the user.
+protocol UpdateNotifying: Sendable {
+  /// Asks the user to allow `options`. `UpdateChecker` names them, so what the user is asked to allow is decided
+  /// where a test can see it.
+  func requestAuthorization(options: UNAuthorizationOptions) async
+  func authorizationStatus() async -> UNAuthorizationStatus
+  /// Shows `request`. `UpdateChecker` builds it whole, so what the user reads is decided where a test can see it.
+  func post(_ request: UNNotificationRequest) async throws
+}
+
+/// The user-notification center, as the app uses it.
+struct SystemUpdateNotifier: UpdateNotifying {
+  func requestAuthorization(options: UNAuthorizationOptions) async {
+    _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: options)
+  }
+
+  func authorizationStatus() async -> UNAuthorizationStatus {
+    await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+  }
+
+  func post(_ request: UNNotificationRequest) async throws { try await UNUserNotificationCenter.current().add(request) }
+}
+
 /// Checks GitHub Releases for a newer version, remembers the answer, and notifies once per
 /// version.
 ///
@@ -17,19 +42,40 @@ import UserNotifications
   /// Minimum spacing between requests. GitHub allows 60 an hour unauthenticated; this uses two.
   @ObservationIgnored private static let checkInterval: TimeInterval = 30 * 60
   @ObservationIgnored private let defaults: UserDefaults
+  @ObservationIgnored private let session: URLSession
+  @ObservationIgnored private let notifier: any UpdateNotifying
+  @ObservationIgnored private let log: @Sendable (_ message: String) -> Void
   @ObservationIgnored private var loop: Task<Void, Never>?
   @ObservationIgnored private var loggedDenial = false
-  @ObservationIgnored private static let lastCheckKey = "lastUpdateCheck"
+  /// When the last check succeeded. Internal so a test can hold a started checker's loop back, or make it due again.
+  @ObservationIgnored static let lastCheckKey = "lastUpdateCheck"
   @ObservationIgnored private static let latestVersionKey = "latestKnownVersion"
   @ObservationIgnored private static let notifiedVersionKey = "notifiedVersion"
-
-  init(defaults: UserDefaults = .standard) {
-    self.defaults = defaults
-    latestVersion = defaults.string(forKey: Self.latestVersionKey)
-  }
+  /// What a request for notification permission asks to show: an alert, with its sound. Named once, so the request
+  /// made at launch and the one made before an announcement cannot ask for different things.
+  @ObservationIgnored private static let notificationOptions: UNAuthorizationOptions = [.alert, .sound]
 
   /// The running app's version, or nil when run without a bundle (e.g. `swift run`).
-  var currentVersion: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
+  let currentVersion: String?
+
+  /// Stand-ins in tests for each of these:
+  /// - Parameters:
+  ///   - defaults: Where the last check and the versions seen and announced persist: `.standard` in the app.
+  ///   - session: Asks GitHub: `URLSession.shared` in the app.
+  ///   - notifier: Tells the user: `SystemUpdateNotifier` in the app.
+  ///   - currentVersion: What a release is compared with: the bundle's version in the app.
+  ///   - log: Where decisions are recorded: the app's log.
+  init(
+    defaults: UserDefaults, session: URLSession, notifier: any UpdateNotifying, currentVersion: String?,
+    log: @escaping @Sendable (_ message: String) -> Void
+  ) {
+    self.defaults = defaults
+    self.session = session
+    self.notifier = notifier
+    self.currentVersion = currentVersion
+    self.log = log
+    latestVersion = defaults.string(forKey: Self.latestVersionKey)
+  }
 
   /// True when GitHub has a version newer than the running one.
   var updateAvailable: Bool {
@@ -44,8 +90,10 @@ import UserNotifications
     guard loop == nil else { return }
     // Ask for notification permission now: the prompt has to be answered before a notification
     // can be posted, and asking at launch puts it in front of someone who is already here,
-    // rather than whenever a release happens to land.
-    Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
+    // rather than whenever a release happens to land. An unbundled build does not ask: with no
+    // version to compare it never announces anything, and the real notification center crashes a
+    // process without a bundle.
+    if currentVersion != nil { Task { [notifier] in await notifier.requestAuthorization(options: Self.notificationOptions) } }
     loop = Task { [weak self] in
       while !Task.isCancelled {
         await self?.check()
@@ -75,13 +123,17 @@ import UserNotifications
     request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     request.setValue("TokenRation", forHTTPHeaderField: "User-Agent")
 
-    guard let (data, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse else {
-      Log.write("[update] check failed: no response")
+    guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else {
+      log("[update] check failed: no response")
       return  // offline; try again next window
     }
-    guard http.statusCode == 200, let release = try? JSONDecoder().decode(Release.self, from: data) else {
-      Log.write("[update] check failed: HTTP \(http.statusCode)")
+    guard http.statusCode == 200 else {
+      log("[update] check failed: HTTP \(http.statusCode)")
       return  // rate-limited, or no releases yet
+    }
+    guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
+      log("[update] check failed: unreadable release")
+      return
     }
 
     // Record the check only on success, so a failure retries at the next opportunity.
@@ -91,10 +143,10 @@ import UserNotifications
     defaults.set(version, forKey: Self.latestVersionKey)
 
     guard Self.isNewer(version, than: current) else {
-      Log.write("[update] \(current) is current (latest \(version))")
+      log("[update] \(current) is current (latest \(version))")
       return
     }
-    Log.write("[update] \(version) available (running \(current))")
+    log("[update] \(version) available (running \(current))")
     await notify(about: version)
   }
 
@@ -103,31 +155,36 @@ import UserNotifications
   private func notify(about version: String) async {
     guard defaults.string(forKey: Self.notifiedVersionKey) != version else { return }
 
-    let center = UNUserNotificationCenter.current()
-    var status = await center.notificationSettings().authorizationStatus
+    var status = await notifier.authorizationStatus()
     if status == .notDetermined {
       // The request made at launch may still be sitting in front of the user. Waiting for their
       // answer here keeps the very first announcement from being dropped on a fresh install.
-      _ = try? await center.requestAuthorization(options: [.alert, .sound])
-      status = await center.notificationSettings().authorizationStatus
+      await notifier.requestAuthorization(options: Self.notificationOptions)
+      status = await notifier.authorizationStatus()
     }
     guard status == .authorized || status == .provisional else {
       // Only once per run: an update stays pending across many checks, and repeating this
       // every half hour would bury the log.
       if !loggedDenial {
-        Log.write("[update] notifications not permitted; the panel still shows the update")
+        log("[update] notifications not permitted; the panel still shows the update")
         loggedDenial = true
       }
       return
     }
 
+    do {
+      try await notifier.post(Self.announcement(of: version))
+      defaults.set(version, forKey: Self.notifiedVersionKey)
+    } catch { log("[update] could not post notification: \(error.localizedDescription)") }
+  }
+
+  /// The notification announcing `version`: shown at once, under an identifier that names the version.
+  /// Nonisolated, so the request it returns is not the main actor's and can be sent to the notifier.
+  nonisolated private static func announcement(of version: String) -> UNNotificationRequest {
     let content = UNMutableNotificationContent()
     content.title = "TokenRation \(version) is available"
     content.body = "Run brew upgrade tokenration to update."
-    do {
-      try await center.add(UNNotificationRequest(identifier: "update-\(version)", content: content, trigger: nil))
-      defaults.set(version, forKey: Self.notifiedVersionKey)
-    } catch { Log.write("[update] could not post notification: \(error.localizedDescription)") }
+    return UNNotificationRequest(identifier: "update-\(version)", content: content, trigger: nil)
   }
 
   private struct Release: Decodable {

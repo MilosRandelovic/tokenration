@@ -31,7 +31,7 @@ import UsageState
   @ObservationIgnored private let provider: any UsageProviding
   @ObservationIgnored private let baseInterval: TimeInterval
   @ObservationIgnored private var loopTask: Task<Void, Never>?
-  @ObservationIgnored private let pathMonitor = NWPathMonitor()
+  @ObservationIgnored private let network: any NetworkMonitoring
   @ObservationIgnored private let defaults: UserDefaults
 
   /// No two attempts within this window, whatever triggered them (launch, wake, reconnect,
@@ -68,15 +68,21 @@ import UsageState
 
   /// Which source this model polls.
   let source: Provider
+  private let logSink: @Sendable (_ message: String) -> Void
 
+  /// `network` says whether this Mac is offline: a `SystemNetworkMonitor` in the app, a stand-in in tests, so a
+  /// test's outcome never depends on the network of the Mac that runs it. `log` receives each line already
+  /// prefixed with the provider: the app's log in production, a sink in tests so the suite never writes the user's.
   init(
-    provider: any UsageProviding = ClaudeUsageProvider(), baseInterval: TimeInterval = UsageModel.defaultInterval,
-    defaults: UserDefaults = .standard, restoring: UsageState? = UsageStateStore.read()
+    provider: any UsageProviding, baseInterval: TimeInterval = UsageModel.defaultInterval, defaults: UserDefaults, restoring: UsageState?,
+    network: any NetworkMonitoring, log sink: @escaping @Sendable (_ message: String) -> Void
   ) {
     self.provider = provider
     self.baseInterval = baseInterval
     self.defaults = defaults
+    self.network = network
     self.source = provider.provider
+    self.logSink = sink
     let suffix = provider.provider.rawValue
     self.deadlineKey = "rateLimitedUntil.\(suffix)"
     self.nextAttemptKey = "nextAttemptAt.\(suffix)"
@@ -122,7 +128,7 @@ import UsageState
   }
 
   /// Log with the provider name, so a two-provider log stays readable.
-  private func log(_ message: String) { Log.write("[\(source.rawValue)] \(message)") }
+  private func log(_ message: String) { logSink("[\(source.rawValue)] \(message)") }
 
   // MARK: - Persisted state
 
@@ -188,16 +194,16 @@ import UsageState
     loopTask = nil
   }
 
-  /// True when the last reading is old enough to be worth refreshing on demand.
   /// When the next attempt is allowed, or nil when one may be made now.
   ///
   /// `rateLimitedUntil` covers only the 429 case; a hold after an auth failure or a general
   /// error is just as binding, and a refresh asked for during either is refused. The UI needs
   /// the effective deadline so it can stop offering an action that cannot happen.
   var heldUntil: Date? {
-    // All three refusal paths in `refresh`, not just the throttle: an auth or error backoff
+    // The two deadlines `refresh` refuses on, not just the throttle: an auth or error backoff
     // binds the same way, and so does the minimum gap since the last attempt — including one
-    // that succeeded. Miss any of them and the button takes a click it cannot act on.
+    // that succeeded. Miss either and the button takes a click it cannot act on. Its third
+    // guard, being offline, has no deadline to report; the panel reads `isOffline` for it instead.
     //
     // The exception is a spent auth hold. It exists to wait for exactly one thing — different
     // credentials — and `refresh` cuts it short the moment they arrive, so reporting it here
@@ -219,6 +225,7 @@ import UsageState
     return rejected != current
   }
 
+  /// True when the last reading is old enough to be worth refreshing on demand.
   func isStale(olderThan age: TimeInterval = 60) -> Bool { Date().timeIntervalSince(snapshot.updatedAt) > age }
 
   /// Attempt one fetch. Returns how many seconds to wait before the next attempt.
@@ -343,17 +350,13 @@ import UsageState
   /// Track connectivity so offline stretches cost nothing, and so regaining a connection
   /// refreshes promptly (still subject to the guards in `refresh`).
   private func startNetworkMonitor() {
-    pathMonitor.pathUpdateHandler = { [weak self] path in
-      let offline = path.status != .satisfied
-      Task { @MainActor [weak self] in
-        guard let self, offline != self.isOffline else { return }
-        self.isOffline = offline
-        self.log("network \(offline ? "lost" : "available")")
-        self.onChange?()
-        if !offline { await self.refresh(trigger: "reconnect") }
-      }
+    network.start { [weak self] offline in
+      guard let self, offline != self.isOffline else { return }
+      self.isOffline = offline
+      self.log("network \(offline ? "lost" : "available")")
+      self.onChange?()
+      if !offline { await self.refresh(trigger: "reconnect") }
     }
-    pathMonitor.start(queue: DispatchQueue.global(qos: .utility))
   }
 
   /// Whether the credentials on disk differ from the ones whose rejection caused the hold.
@@ -365,4 +368,29 @@ import UsageState
 
   /// ±10%, so several machines (or a restart storm) don't line up on the same tick.
   private func jittered(_ interval: TimeInterval) -> TimeInterval { interval * Double.random(in: 0.9...1.1) }
+}
+
+/// Where a model learns whether this Mac is offline: `SystemNetworkMonitor` in the app, a stand-in in tests.
+@MainActor protocol NetworkMonitoring {
+  /// Starts reporting whether the Mac is offline, on the main actor: once when reporting starts, then whenever
+  /// the network path changes, which can report the same state again.
+  func start(reporting update: @escaping @MainActor (_ offline: Bool) async -> Void)
+}
+
+/// This Mac's network path, from an `NWPathMonitor` of its own.
+@MainActor final class SystemNetworkMonitor: NetworkMonitoring {
+  private let monitor = NWPathMonitor()
+
+  /// Whether a path of `status` leaves this Mac offline: any path but a satisfied one. Nonisolated, so the
+  /// monitor's queue can call it, and a test can check the rule without starting a monitor.
+  nonisolated static func isOffline(_ status: NWPath.Status) -> Bool { status != .satisfied }
+
+  func start(reporting update: @escaping @MainActor (_ offline: Bool) async -> Void) {
+    // The monitor reports on its own queue; the model's state lives on the main actor.
+    monitor.pathUpdateHandler = { path in
+      let offline = SystemNetworkMonitor.isOffline(path.status)
+      Task { @MainActor in await update(offline) }
+    }
+    monitor.start(queue: DispatchQueue.global(qos: .utility))
+  }
 }

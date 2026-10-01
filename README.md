@@ -8,7 +8,16 @@ Pin one metric for a single icon, or several to stack them. Each provider uses a
 
 ## Install
 
-Requires macOS 14+ and at least one of the Claude Code or Codex CLIs, signed in. Whichever are present are detected automatically.
+Requires macOS 14+ and at least one of the Claude Code or Codex CLIs, signed in. Claude Code counts as set up once its `~/.claude` directory exists, and Codex once you have signed in to it, which by default leaves its credentials in `~/.codex/auth.json`. Whichever are set up are detected automatically when TokenRation launches, so one set up later appears after a relaunch. Once Codex is set up, TokenRation looks for `codex` in:
+
+- the ChatGPT app in `/Applications`
+- the VS Code extension
+- Homebrew
+- a `PATH` your login profile sets, read through your login shell when that is zsh or bash; with tcsh or csh, this `PATH` is not searched at all
+
+A codex installed later in the ChatGPT app, the VS Code extension or Homebrew is found without a relaunch. One on a profile-set `PATH` is found at the next launch, if the profile answers within the few seconds TokenRation waits.
+
+A codex that only `.zshrc` or `.bashrc` puts on `PATH`, as nvm usually arranges, is not found unless a file your login shell reads, such as `~/.zprofile` or `~/.bash_profile`, puts its directory on `PATH` too. One installed with npm starts when its `node` sits beside it or in Homebrew's directories.
 
 ```sh
 brew tap MilosRandelovic/tokenration
@@ -41,7 +50,7 @@ make test                       # run the test suite
 make format                     # format the sources (CI fails on unformatted code)
 make app                        # TokenRation.app, ad-hoc signed (local use)
 make release                    # distributable build; notarized with a Developer ID cert
-swift run                       # run from source (dies with the shell — fine for a quick check)
+swift run TokenRation           # run from source (dies with the shell — fine for a quick check)
 ```
 
 Launch the built app with `open TokenRation.app`, or copy it to `/Applications` and start it from Finder/Spotlight. **Don't run `TokenRation.app/Contents/MacOS/TokenRation &` from a terminal** — that makes the app a child of the shell, so it is killed the moment the shell exits (silently, with no crash report). `open` detaches it properly. For a menu-bar app you want running all the time, add it to **System Settings ▸ General ▸ Login Items**.
@@ -60,14 +69,19 @@ Launch the built app with `open TokenRation.app`, or copy it to `/Applications` 
 Sources/TokenRation/
 ├── Main.swift · AppDelegate.swift   entry point; wires providers + prefs + status bar
 ├── Provider.swift                   the two providers: detection + per-provider icon family
-├── ProvidersModel.swift             one UsageModel per detected provider; tab selection
+├── ProvidersModel.swift             one UsageModel per provider shown; tab selection
 ├── UsageModel.swift                 polling loop + state (per-provider, persisted backoff)
 ├── ClaudeUsageProvider.swift        /api/oauth/usage → DisplayMetrics
 ├── CodexUsageProvider.swift         codex app-server JSON-RPC → DisplayMetrics
 ├── CodexBinary.swift                locates the codex executable
+├── UsageProviding.swift             the provider protocol and UsageError
 ├── KeychainToken.swift              reads the Claude token via /usr/bin/security
+├── Preferences.swift                which metrics are pinned
 ├── StatusBarController.swift        menu-bar item + the custom dropdown panel
 ├── UsagePanelView.swift             SwiftUI panel: tabs, meters, pins, states, About
+├── UpdateChecker.swift              the GitHub release check
+├── Log.swift                        the diagnostics log
+├── RestoredSnapshot.swift           the last published reading, shown at a cold start
 └── UsageSnapshot.swift              value types the UI renders
 
 Sources/UsageState/                  shared state file format (app writes, MCP server reads)
@@ -76,7 +90,7 @@ Sources/TokenRationMCP/              the bundled stdio MCP server
 
 ## Releasing
 
-Bump `SHORT_VERSION` in `scripts/common.sh` and push to `main`. The release workflow tests, builds, tags, publishes the GitHub release with `TokenRation.zip`, and opens a pull request against the [tap](https://github.com/MilosRandelovic/homebrew-tokenration) updating the cask's version and checksum. Merging that PR makes the release installable.
+Bump `SHORT_VERSION` in `scripts/common.sh`, add that version's section to `CHANGELOG.md`, and merge to `main`. The release workflow builds, tags, publishes the GitHub release with `TokenRation.zip`, and opens a pull request against the [tap](https://github.com/MilosRandelovic/homebrew-tokenration) updating the cask's version and checksum. Merging that PR makes the release installable.
 
 The job **fails if the version is already tagged**, so every push to `main` either publishes a release or goes red — a green run always means something shipped.
 

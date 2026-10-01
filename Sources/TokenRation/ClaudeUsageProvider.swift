@@ -1,4 +1,44 @@
 import Foundation
+import os
+
+/// Where the Claude provider reads its OAuth token: the login Keychain in the app, a fixture in tests.
+protocol ClaudeCredentials: Sendable {
+  /// The token a request sends, or the `UsageError` that stops one.
+  func token() throws -> String
+  /// A value that changes when the credential does, so a sign-in can end an auth hold at once.
+  func fingerprint() throws -> String
+}
+
+/// Claude Code's credential in the login Keychain, read through `tool`.
+struct KeychainCredentials: ClaudeCredentials {
+  let service: String
+  /// What reads the Keychain: `KeychainToken.securityTool` in the app, a fixture in tests.
+  let tool: URL
+  /// Where a failed read is recorded: the app's log in the app. A failure is logged once, until a read
+  /// succeeds or fails differently, since credentials are read on every attempt and every panel open.
+  let log: @Sendable (_ message: String) -> Void
+  private let lastFailure = OSAllocatedUnfairLock<String?>(initialState: nil)
+
+  init(service: String = "Claude Code-credentials", tool: URL, log: @escaping @Sendable (_ message: String) -> Void) {
+    self.service = service
+    self.tool = tool
+    self.log = log
+  }
+
+  func token() throws -> String {
+    let token = try KeychainToken.read(service: service, tool: tool) { reason in
+      let isNew = lastFailure.withLock { last in
+        defer { last = reason }
+        return last != reason
+      }
+      if isNew { log("[claude] Keychain read: \(reason)") }
+    }
+    lastFailure.withLock { $0 = nil }
+    return token
+  }
+
+  func fingerprint() throws -> String { KeychainToken.fingerprint(of: try token()) }
+}
 
 /// Live usage from `GET https://api.anthropic.com/api/oauth/usage` — the same endpoint
 /// Claude Code's `/usage` command uses — authenticated with the OAuth token from the
@@ -7,23 +47,26 @@ import Foundation
 struct ClaudeUsageProvider: UsageProviding {
   let provider = Provider.claude
   var endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-  var keychainService = "Claude Code-credentials"
+  /// Asks the endpoint: `URLSession.shared` in the app, a stub in tests.
+  let session: URLSession
+  /// Where the token comes from: `KeychainCredentials` in the app, a fixture in tests.
+  let credentials: any ClaudeCredentials
 
   /// Absent or unusable credentials get a marker rather than nil, so that signing back in reads
   /// as a change and clears the hold immediately instead of waiting out the auth interval.
-  func credentialFingerprint() async -> String? { (try? KeychainToken.fingerprint(service: keychainService)) ?? "none" }
+  func credentialFingerprint() async -> String? { (try? credentials.fingerprint()) ?? "none" }
 
   /// Reads the credential the way a fetch would and reports what would refuse it. No request is
   /// made: an expired or missing token is visible in the Keychain itself.
   func credentialProblem() async -> UsageError? {
     do {
-      _ = try KeychainToken.read(service: keychainService)
+      _ = try credentials.token()
       return nil
     } catch let error as UsageError { return error } catch { return .notSignedIn }
   }
 
   func fetch() async throws -> UsageSnapshot {
-    let token = try KeychainToken.read(service: keychainService)
+    let token = try credentials.token()
 
     var request = URLRequest(url: endpoint)
     request.timeoutInterval = 10
@@ -31,7 +74,7 @@ struct ClaudeUsageProvider: UsageProviding {
     request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
     request.setValue("TokenRation", forHTTPHeaderField: "User-Agent")
 
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await session.data(for: request)
     guard let http = response as? HTTPURLResponse else { throw UsageError.badResponse }
     switch http.statusCode {
     case 200: break
@@ -41,7 +84,13 @@ struct ClaudeUsageProvider: UsageProviding {
     }
 
     guard let payload = try? JSONDecoder().decode(UsageResponse.self, from: data) else { throw UsageError.badResponse }
-    return payload.snapshot(now: Date())
+    // Every field is optional and a limit of an unknown kind is skipped, so a body of another shape, such as one
+    // whose limits or their kinds were renamed and that carries no spend either, still decodes, to a reading with
+    // nothing in it. Taken as a reading, it would drop the last numbers and show the tab as loading, with nothing in
+    // the log to say why.
+    let snapshot = payload.snapshot(now: Date())
+    guard !snapshot.metrics.isEmpty else { throw UsageError.badResponse }
+    return snapshot
   }
 
   /// `Retry-After` is either a number of seconds or an HTTP-date; parsing only the former

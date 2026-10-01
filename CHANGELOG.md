@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.0]
+
+- Codex keeps working when the ChatGPT app or VS Code extension moves its codex binary, including ChatGPT 26.924's new location.
+- A missing codex says "Couldn't find or start the Codex CLI." instead of "Not signed in to Claude Code.", and retries on the normal schedule.
+- The Codex tab shows whenever you're signed in to Codex, even before codex is found.
+- Launch no longer waits for your shell profile while looking for codex.
+- A codex installed with npm now starts.
+- An unreadable Claude usage answer shows an error and keeps the last numbers.
+- The refresh button is disabled while offline.
+- The log says why a codex launch or a Keychain read failed.
+
 ## [1.0.4]
 
 - The refresh button's tooltip counts down in seconds under a minute. It previously allowed no unit below a minute, which suits a window that resets in hours but not a button whose commonest wait is the two-minute gap between attempts — so the last minute of every hold read "Next attempt in 0m". Reset countdowns are unchanged.
