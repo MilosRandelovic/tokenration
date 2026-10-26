@@ -11,7 +11,7 @@ public enum UsageSummary {
   /// reported as hours-old numbers that read as current. The brackets earn their place: an error
   /// message carries its own punctuation, so the warning needs an extent that does not depend on
   /// what is inside it.
-  public static func text(for state: UsageState, now: Date = Date()) -> String {
+  public static func text(for state: UsageState, now: Date) -> String {
     state.providers.map { line(for: $0, pollIntervalSeconds: state.pollIntervalSeconds, now: now) }.joined(separator: "\n")
   }
 

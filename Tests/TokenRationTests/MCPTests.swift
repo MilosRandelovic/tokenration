@@ -35,9 +35,10 @@ final class FreshnessTests: XCTestCase {
   }
 
   func testProviderWithNoReadingCountsAsStale() {
+    let now = Date()
     let never = provider(updatedAt: nil)
-    XCTAssertNil(never.readingAge())
-    XCTAssertTrue(never.isStale(pollIntervalSeconds: 300), "a provider that has never produced a reading must not look fresh")
+    XCTAssertNil(never.readingAge(now: now))
+    XCTAssertTrue(never.isStale(pollIntervalSeconds: 300, now: now), "a provider that has never produced a reading must not look fresh")
   }
 
   func testStateRoundTripsThroughJSON() throws {
