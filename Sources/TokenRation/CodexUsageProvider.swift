@@ -279,6 +279,8 @@ struct CodexUsageProvider: UsageProviding {
 ///
 /// `@unchecked Sendable` because its callbacks run on Foundation's queues: `continuation`, `buffer` and
 /// `isFinished` are read and written only under `lock`, and `finish` resumes the continuation at most once.
+/// Nothing but discipline holds that: the compiler stops checking this type, so an access added outside `lock`
+/// compiles, and no test reliably catches the race it opens.
 private final class CodexExchange: @unchecked Sendable {
   /// Writing to a child that has already exited raises SIGPIPE, which terminates this process
   /// by default instead of returning an error. Ignoring it once turns a dead `codex app-server`
@@ -347,7 +349,7 @@ private final class CodexExchange: @unchecked Sendable {
     // reader already in place takes that EOF for a child that answered nothing, reporting a bad
     // response instead of a codex that could not start. Each reader clears itself at EOF, where
     // it would otherwise be called again and again. `finish` clears them too, but a `finish`
-    // that runs between the re-check above and this install finds none to clear, so each reader
+    // that runs between the `isFinished` re-check after `run()` and this install finds none to clear, so each reader
     // must clear itself. That self-clear is what makes this race safe, and a test pins it directly,
     // so unlike a cancellation before `run()`, which `beforeLaunch` steers, this race gets no hook.
     output.fileHandleForReading.readabilityHandler = CodexUsageProvider.reader(

@@ -240,7 +240,7 @@ import UsageState
     //    extends the penalty, and re-hammering a failing one is pointless. This is
     //    persisted, so a relaunch or sleep/wake cycle can't shorten it.
     // The later of the two deadlines wins: `rateLimitedUntil` is also what older builds
-    // persisted, so this is belt-and-braces alongside the migration above.
+    // persisted, so this is belt-and-braces alongside `init`'s migration of it to `nextAttemptAt`.
     let effectiveDeadline = [nextAttemptAt, rateLimitedUntil].compactMap { $0 }.max()
     if let until = effectiveDeadline {
       if until > Date() {

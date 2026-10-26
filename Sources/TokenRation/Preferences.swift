@@ -16,7 +16,7 @@ import Observation
   ///   - available: the providers the panel shows: those set up on this Mac, or Claude alone when
   ///     neither is. Pins are constrained to these, so a Codex-only machine never ends up with an
   ///     unpinnable Claude placeholder in the menu bar (there'd be no Claude tab to unpin it from).
-  ///     The empty-list fallback below is a defence: `ProvidersModel.resolve` never hands over none.
+  ///     Falling back to Claude when the list is empty is a defence: `ProvidersModel.resolve` never hands over none.
   ///   - defaults: storage for the pin list; injectable for tests.
   ///   - log: where pin decisions are recorded: the app's log, or a sink in tests.
   init(available: [Provider], defaults: UserDefaults, log: @escaping @Sendable (_ message: String) -> Void) {
