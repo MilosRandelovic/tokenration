@@ -84,11 +84,11 @@ public extension ProviderUsage {
   /// observable changes — a refresh starting, an error, a connectivity change — so file age
   /// can look fresh while the underlying quota numbers are old. Returns nil when the provider
   /// has never produced a reading.
-  func readingAge(now: Date = Date()) -> TimeInterval? { updatedAt.map { now.timeIntervalSince($0) } }
+  func readingAge(now: Date) -> TimeInterval? { updatedAt.map { now.timeIntervalSince($0) } }
 
   /// Whether this provider's reading is older than roughly two poll intervals — by which
   /// point the app probably isn't running. Unknown readings count as stale.
-  func isStale(pollIntervalSeconds: Int, now: Date = Date()) -> Bool {
+  func isStale(pollIntervalSeconds: Int, now: Date) -> Bool {
     guard let age = readingAge(now: now) else { return true }
     return age > Double(pollIntervalSeconds * 2)
   }

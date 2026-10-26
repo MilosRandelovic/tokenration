@@ -340,7 +340,8 @@ private struct PanelRoot: View {
   private func menuSecondary(for metric: DisplayMetric?) -> String {
     guard let metric else { return "" }
     if let resetsAt = metric.resetsAt {
-      if resetsAt.timeIntervalSinceNow > 0 { return ResetText.short(until: resetsAt) }
+      let now = Date()
+      if resetsAt > now { return ResetText.short(until: resetsAt, from: now) }
       guard let taken = providers.model(for: metric.provider)?.snapshot.updatedAt, resetsAt > taken else { return "" }
       return ResetText.short(until: resetsAt, from: taken)
     }

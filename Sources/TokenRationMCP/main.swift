@@ -125,9 +125,8 @@ func missingStateResult() -> [String: Any] {
       + "~/Library/Application Support/TokenRation/usage.json)", payload: ["available": false])
 }
 
-/// Flatten the state into plain dictionaries, adding derived freshness/countdown fields.
-func snapshotPayload(_ state: UsageState) -> [String: Any] {
-  let now = Date()
+/// Flatten the state into plain dictionaries, adding derived freshness/countdown fields as of `now`.
+func snapshotPayload(_ state: UsageState, now: Date) -> [String: Any] {
   let fileAge = Int(now.timeIntervalSince(state.writtenAt))
   var providers: [[String: Any]] = []
   for provider in state.providers {
@@ -139,7 +138,7 @@ func snapshotPayload(_ state: UsageState) -> [String: Any] {
       if let percent = metric.usedPercent { entry["usedPercent"] = percent }
       if let resets = metric.resetsAt {
         entry["resetsAt"] = isoString(resets)
-        entry["resetsInSeconds"] = max(Int(resets.timeIntervalSinceNow), 0)
+        entry["resetsInSeconds"] = max(Int(resets.timeIntervalSince(now)), 0)
       }
       metrics.append(entry)
     }
@@ -179,7 +178,9 @@ let tools: [[String: Any]] = [
 
 func callGetUsage() -> [String: Any] {
   guard let state = stateOrNil() else { return missingStateResult() }
-  return toolResult(summary: UsageSummary.text(for: state), payload: snapshotPayload(state))
+  // One moment for both, so the line a caller quotes and the payload beside it give the same ages and countdowns.
+  let now = Date()
+  return toolResult(summary: UsageSummary.text(for: state, now: now), payload: snapshotPayload(state, now: now))
 }
 
 // MARK: - Serve
