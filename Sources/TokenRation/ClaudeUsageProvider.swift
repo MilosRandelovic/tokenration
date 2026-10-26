@@ -47,7 +47,7 @@ struct KeychainCredentials: ClaudeCredentials {
 struct ClaudeUsageProvider: UsageProviding {
   let provider = Provider.claude
   var endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-  /// Asks the endpoint: `URLSession.shared` in the app, a stub in tests.
+  /// Asks the endpoint: `URLSession.uncached` in the app, a stub in tests.
   let session: URLSession
   /// Where the token comes from: `KeychainCredentials` in the app, a fixture in tests.
   let credentials: any ClaudeCredentials

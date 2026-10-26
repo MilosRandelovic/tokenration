@@ -61,7 +61,7 @@ struct SystemUpdateNotifier: UpdateNotifying {
   /// Stand-ins in tests for each of these:
   /// - Parameters:
   ///   - defaults: Where the last check and the versions seen and announced persist: `.standard` in the app.
-  ///   - session: Asks GitHub: `URLSession.shared` in the app.
+  ///   - session: Asks GitHub: `URLSession.uncached` in the app.
   ///   - notifier: Tells the user: `SystemUpdateNotifier` in the app.
   ///   - currentVersion: What a release is compared with: the bundle's version in the app.
   ///   - log: Where decisions are recorded: the app's log.
