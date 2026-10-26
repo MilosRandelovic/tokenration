@@ -13,7 +13,7 @@ import UsageState
     defaults: .standard, log: { Log.write($0) }, publish: UsageStateStore.write)
   private lazy var prefs = Preferences(available: providers.available, defaults: .standard, log: { Log.write($0) })
   private let updates = UpdateChecker(
-    defaults: .standard, session: .shared, notifier: SystemUpdateNotifier(),
+    defaults: .standard, session: .uncached, notifier: SystemUpdateNotifier(),
     currentVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String, log: { Log.write($0) })
   private var statusBar: StatusBarController?
 
@@ -48,4 +48,14 @@ import UsageState
     providers.startAll()
     updates.start()
   }
+}
+
+extension URLSession {
+  /// The session the app's clients ask the network through. It keeps no HTTP cache: the app publishes what it
+  /// keeps of a reading itself, so the system cache would only hold a second copy of each request and response.
+  static let uncached: URLSession = {
+    let configuration = URLSessionConfiguration.default
+    configuration.urlCache = nil
+    return URLSession(configuration: configuration)
+  }()
 }

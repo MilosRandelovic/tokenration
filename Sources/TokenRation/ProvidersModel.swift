@@ -104,7 +104,7 @@ import UsageState
   nonisolated static func makeProvider(_ provider: Provider) -> any UsageProviding {
     switch provider {
     case .claude:
-      ClaudeUsageProvider(session: .shared, credentials: KeychainCredentials(tool: KeychainToken.securityTool, log: { Log.write($0) }))
+      ClaudeUsageProvider(session: .uncached, credentials: KeychainCredentials(tool: KeychainToken.securityTool, log: { Log.write($0) }))
     // The shared resolver, as detection used: see `CodexBinary.Resolver`.
     case .codex: CodexUsageProvider()
     }
