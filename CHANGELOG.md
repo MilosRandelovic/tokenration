@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.1]
+
+- Claude and GitHub requests are no longer kept in the system HTTP cache.
+- `get_usage` reads the clock once, so its summary line and its data always agree on ages and countdowns.
+
 ## [1.1.0]
 
 - Codex keeps working when the ChatGPT app or VS Code extension moves its codex binary, including ChatGPT 26.924's new location.

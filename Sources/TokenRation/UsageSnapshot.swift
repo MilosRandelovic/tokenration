@@ -85,7 +85,7 @@ enum ResetText {
   ///   - reference: the moment to measure against. A view driven by a timer passes its own
   ///     tick, so the text changes when the tick does rather than only when the data does.
   /// - Returns: an abbreviated duration such as "2h 13m", or "0m" once the reset has passed.
-  static func short(until date: Date, from reference: Date = Date()) -> String {
+  static func short(until date: Date, from reference: Date) -> String {
     let formatter = DateComponentsFormatter()
     formatter.allowedUnits = [.day, .hour, .minute]
     formatter.unitsStyle = .abbreviated
@@ -97,7 +97,7 @@ enum ResetText {
   /// attempts. `short` allows no unit below a minute — right for a window that resets in hours,
   /// wrong for the refresh button, whose commonest wait is two minutes and so would spend half
   /// of it reading "0m". Rounds up, because a wait rendered as "0s" is no better.
-  static func wait(until date: Date, from reference: Date = Date()) -> String {
+  static func wait(until date: Date, from reference: Date) -> String {
     let seconds = Int(max(date.timeIntervalSince(reference), 0).rounded(.up))
     guard seconds < 60 else { return short(until: date, from: reference) }
     return "\(seconds)s"

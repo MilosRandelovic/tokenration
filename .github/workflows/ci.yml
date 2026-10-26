@@ -14,7 +14,10 @@ jobs:
     - name: Check formatting
       run: make lint
 
+    # swift test has no per-test time limit, so this is the floor for a test a regression leaves waiting:
+    # without it the job would run to GitHub's six-hour default.
     - name: Build and run tests
+      timeout-minutes: 15
       run: make test
 
     - name: Assemble app bundle

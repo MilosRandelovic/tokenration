@@ -163,10 +163,11 @@ import os
     XCTAssertEqual(model.model(for: .claude)?.isOffline, false)
   }
 
-  /// The app's Claude provider asks the network through the shared session and reads the login Keychain.
+  /// The app's Claude provider asks the network through the uncached session and reads the login Keychain.
   func testProvidersModelBuildsClaudeOnTheNetworkAndTheKeychain() throws {
     let claude = try XCTUnwrap(ProvidersModel.makeProvider(.claude) as? ClaudeUsageProvider)
-    XCTAssertTrue(claude.session === URLSession.shared)
+    XCTAssertTrue(claude.session === URLSession.uncached)
+    XCTAssertNil(claude.session.configuration.urlCache, "the app's session keeps no HTTP cache")
     let credentials = try XCTUnwrap(claude.credentials as? KeychainCredentials)
     XCTAssertEqual(credentials.service, "Claude Code-credentials")
     XCTAssertEqual(credentials.tool, KeychainToken.securityTool)
