@@ -94,19 +94,6 @@ Bump `SHORT_VERSION` in `scripts/common.sh`, add that version's section to `CHAN
 
 The job **fails if the version is already tagged**, so every push to `main` either publishes a release or goes red — a green run always means something shipped.
 
-### Signing and notarization
-
-Releases are ad-hoc signed unless signing credentials are configured, in which case they are signed with the hardened runtime, notarized and stapled. Ad-hoc builds install fine but are quarantined by Gatekeeper on first launch, which is why the cask carries a caveat.
-
-Signing requires a paid [Apple Developer Program](https://developer.apple.com/programs/) membership and a **Developer ID Application** certificate (Xcode ▸ Settings ▸ Accounts ▸ Manage Certificates; an "Apple Development" certificate is not valid for distribution). For local runs, store notary credentials once with an [app-specific password](https://appleid.apple.com):
-
-```sh
-xcrun notarytool store-credentials "TokenRation-notary" \
-  --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
-```
-
-In CI the same is supplied via the `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD` secrets. `HOMEBREW_TOKENRATION_PAT` (a token with write access to the tap repo) lets the release workflow open the cask pull request.
-
 Distributed as a Homebrew cask via the [homebrew-tokenration](https://github.com/MilosRandelovic/homebrew-tokenration) tap.
 
 ## License
