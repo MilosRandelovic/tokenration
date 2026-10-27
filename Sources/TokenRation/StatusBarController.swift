@@ -33,6 +33,8 @@ private struct PanelRoot: View {
   private var globalMonitor: Any?
   private var localMonitor: Any?
   private var trackTimer: Timer?
+  /// The display whose menu bar the panel was opened from, as its `NSScreenNumber`.
+  private var openedOnDisplay: NSNumber?
   private var countdownTimer: Timer?
   private var animationDeadline = Date.distantPast
   private var spinnerTimer: Timer?
@@ -160,6 +162,8 @@ private struct PanelRoot: View {
   @objc private func togglePanel(_ sender: Any?) { if panel.isVisible { hidePanel() } else { showPanel() } }
 
   private func showPanel() {
+    let pointer = NSEvent.mouseLocation
+    openedOnDisplay = NSScreen.screens.first { NSPointInRect(pointer, $0.frame.insetBy(dx: 0, dy: -1)) }?.displayNumber
     layoutPanel()
     panel.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -187,10 +191,9 @@ private struct PanelRoot: View {
   /// Only writes when the frame actually changes, so a stable item causes no churn; when
   /// the item drifts/resizes, `setFrame` slides the panel smoothly (no close/reopen).
   private func layoutPanel(animated: Bool = false) {
-    guard let button = statusItem.button, let window = button.window else { return }
+    guard let buttonRect = statusItemRect() else { return }
     let fitting = hostingView.fittingSize
     let size = NSSize(width: fitting.width > 10 ? fitting.width : 300, height: fitting.height > 10 ? fitting.height : 220)
-    let buttonRect = window.convertToScreen(button.convert(button.bounds, to: nil))
     let origin = NSPoint(x: (buttonRect.midX - size.width / 2).rounded(), y: (buttonRect.minY - size.height - 5).rounded())
     let target = NSRect(origin: origin, size: size)
 
@@ -239,8 +242,26 @@ private struct PanelRoot: View {
   private func clickIsOnOurUI() -> Bool {
     let location = NSEvent.mouseLocation
     if panel.isVisible, panel.frame.contains(location) { return true }
-    guard let button = statusItem.button, let window = button.window else { return false }
-    return window.convertToScreen(button.convert(button.bounds, to: nil)).contains(location)
+    return statusItemRect()?.contains(location) ?? false
+  }
+
+  /// The status item's frame, in screen coordinates, on the display the panel was opened from.
+  ///
+  /// Each display with its own menu bar shows the item, but AppKit keeps one window for it and moves that window to
+  /// whichever menu bar is active, which need not be the one clicked. Following the window would carry an open panel
+  /// to another display, so while it sits elsewhere the item's frame is carried over to the display that was clicked.
+  private func statusItemRect() -> NSRect? {
+    guard let button = statusItem.button, let window = button.window else { return nil }
+    let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
+    guard let windowScreen = window.screen, windowScreen.displayNumber != openedOnDisplay,
+      let opened = NSScreen.screens.first(where: { $0.displayNumber == openedOnDisplay })
+    else { return rect }
+    return Self.statusItemRect(rect, movedFrom: windowScreen.frame, to: opened.frame)
+  }
+
+  /// A status item's frame on another display's menu bar: the items keep their distance from the right edge and the top.
+  static func statusItemRect(_ rect: NSRect, movedFrom source: NSRect, to target: NSRect) -> NSRect {
+    NSRect(x: target.maxX - (source.maxX - rect.minX), y: target.maxY - (source.maxY - rect.minY), width: rect.width, height: rect.height)
   }
 
   private func stopMonitors() {
@@ -353,4 +374,9 @@ private struct PanelRoot: View {
     let lines = ids.compactMap { providers.metric(id: $0) }.map { "\($0.provider.displayName) \($0.title): \($0.valueText)" }
     return lines.isEmpty ? "TokenRation" : lines.joined(separator: "\n")
   }
+}
+
+extension NSScreen {
+  /// The display's identifier, stable while it stays connected, unlike the `NSScreen` instance standing for it.
+  fileprivate var displayNumber: NSNumber? { deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber }
 }
