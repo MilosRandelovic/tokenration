@@ -14,8 +14,6 @@
 #   NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_PASSWORD
 #                   notary credentials, used instead of a stored profile
 #   TAP_CASK        cask file to update (default: ../homebrew-tokenration/Casks/tokenration.rb)
-#
-# Signing prerequisites are documented in README.md.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
