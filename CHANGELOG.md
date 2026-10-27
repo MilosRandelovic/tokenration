@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.2]
+
+- The panel opens on the display whose menu bar you clicked, instead of moving to another one.
+
 ## [1.1.1]
 
 - Claude and GitHub requests are no longer kept in the system HTTP cache.
