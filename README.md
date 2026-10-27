@@ -4,7 +4,7 @@ A native macOS menu-bar app that shows your **Claude** and **Codex** usage at a 
 
 Pin one metric for a single icon, or several to stack them. Each provider uses a distinct icon family so you can tell them apart at a glance, and all icons are template images, so they look right on light and dark menu bars. When both providers are set up, the panel gets a tab each.
 
-<img src="docs/panel-claude.png" alt="Panel on the Claude tab: session, weekly, per-model and spend meters, with three metrics pinned to the menu bar above" width="49%"> <img src="docs/panel-codex.png" alt="Panel on the Codex tab: weekly window and a per-model limit" width="49%">
+<img src="docs/panel-claude.png" alt="Panel on the Claude tab: session, weekly, per-model and spend meters, with three metrics pinned to the menu bar above" width="49%"> <img src="docs/panel-codex.png" alt="Panel on the Codex tab: session and weekly windows" width="49%">
 
 ## Install
 
