@@ -1024,6 +1024,10 @@ final class CodexBinaryTests: XCTestCase {
 
     try FileManager.default.removeItem(at: claude)
     XCTAssertEqual(Provider.detectAll(home: home, codex: codex), [.codex])
+
+    try FileManager.default.createDirectory(at: home.appendingPathComponent(".grok"), withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: GrokSignIn.file(home: home))
+    XCTAssertEqual(Provider.detectAll(home: home, codex: codex), [.codex, .grok], "Grok once its sign-in exists")
   }
 
   // The child's PATH

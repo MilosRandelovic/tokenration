@@ -79,7 +79,7 @@ struct ClaudeUsageProvider: UsageProviding {
     switch http.statusCode {
     case 200: break
     case 401, 403: throw UsageError.sessionExpired
-    case 429: throw UsageError.rateLimited(retryAfter: Self.retryAfter(http.value(forHTTPHeaderField: "Retry-After")))
+    case 429: throw UsageError.rateLimited(retryAfter: RetryAfter.seconds(http.value(forHTTPHeaderField: "Retry-After")))
     default: throw UsageError.requestFailed(http.statusCode)
     }
 
@@ -91,19 +91,6 @@ struct ClaudeUsageProvider: UsageProviding {
     let snapshot = payload.snapshot(now: Date())
     guard !snapshot.metrics.isEmpty else { throw UsageError.badResponse }
     return snapshot
-  }
-
-  /// `Retry-After` is either a number of seconds or an HTTP-date; parsing only the former
-  /// silently dropped the server's guidance and let us retry far too soon.
-  private static func retryAfter(_ header: String?) -> TimeInterval? {
-    guard let header = header?.trimmingCharacters(in: .whitespaces), !header.isEmpty else { return nil }
-    if let seconds = TimeInterval(header) { return max(seconds, 0) }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(identifier: "GMT")
-    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-    guard let date = formatter.date(from: header) else { return nil }
-    return max(date.timeIntervalSinceNow, 0)
   }
 }
 
@@ -231,5 +218,21 @@ enum Money {
     formatter.maximumFractionDigits = fractionDigits
     formatter.minimumFractionDigits = fractionDigits
     return formatter.string(from: NSNumber(value: amount)) ?? "\(currency) \(amount)"
+  }
+}
+
+/// Reads a `Retry-After` header for any provider asking over HTTP.
+enum RetryAfter {
+  /// `Retry-After` is either a number of seconds or an HTTP-date; parsing only the former
+  /// silently dropped the server's guidance and let us retry far too soon.
+  static func seconds(_ header: String?) -> TimeInterval? {
+    guard let header = header?.trimmingCharacters(in: .whitespaces), !header.isEmpty else { return nil }
+    if let seconds = TimeInterval(header) { return max(seconds, 0) }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    guard let date = formatter.date(from: header) else { return nil }
+    return max(date.timeIntervalSinceNow, 0)
   }
 }

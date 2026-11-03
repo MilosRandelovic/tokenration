@@ -43,6 +43,21 @@ enum UsageError: LocalizedError {
   /// The `codex` executable could not be found or started. Not an authentication failure: nothing
   /// the user signs in to fixes it, so it takes the ordinary error backoff, not the sign-in one.
   case codexUnavailable
+  /// Grok Build has no sign-in on this Mac, or one it can no longer renew. Worded for Grok Build, and on the sign-in
+  /// backoff like `notSignedIn`, since only signing in to Grok Build fixes it.
+  case grokNotSignedIn
+  /// The `grok` executable could not be found or started when its sign-in needed renewing. Like `codexUnavailable`,
+  /// nothing the user signs in to fixes it, so it takes the ordinary error backoff.
+  case grokUnavailable
+
+  /// Whether this says the provider has no usable sign-in, which only the user signing in fixes: such an error raises
+  /// the sign-in warning and waits on the sign-in backoff, and is the one kind a changed credential cuts short.
+  var isMissingSignIn: Bool {
+    switch self {
+    case .notSignedIn, .grokNotSignedIn: true
+    default: false
+    }
+  }
 
   var errorDescription: String? {
     switch self {
@@ -52,6 +67,8 @@ enum UsageError: LocalizedError {
     case .requestFailed(let code): "Usage request failed (HTTP \(code))."
     case .badResponse: "Couldn't read the usage response."
     case .codexUnavailable: "Couldn't find or start the Codex CLI."
+    case .grokNotSignedIn: "Not signed in to Grok Build."
+    case .grokUnavailable: "Couldn't find or start Grok Build to renew its sign-in."
     }
   }
 }

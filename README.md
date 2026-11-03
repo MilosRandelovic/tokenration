@@ -1,14 +1,14 @@
 # TokenRation
 
-A native macOS menu-bar app that shows your **Claude** and **Codex** usage at a glance — session and weekly windows, per-model limits (e.g. Fable, Codex-Spark), and spend/credits.
+A native macOS menu-bar app that shows your **Claude**, **Codex** and **Grok** usage at a glance — session and weekly windows, per-model limits (e.g. Fable, Codex-Spark), and spend/credits.
 
-Pin one metric for a single icon, or several to stack them. Each provider uses a distinct icon family so you can tell them apart at a glance, and all icons are template images, so they look right on light and dark menu bars. When both providers are set up, the panel gets a tab each.
+Pin one metric for a single icon, or several to stack them. Each provider uses a distinct icon family so you can tell them apart at a glance, and all icons are template images, so they look right on light and dark menu bars. When more than one provider is set up, the panel gets a tab each.
 
 <img src="docs/panel-claude.png" alt="Panel on the Claude tab: session, weekly, per-model and spend meters, with three metrics pinned to the menu bar above" width="49%"> <img src="docs/panel-codex.png" alt="Panel on the Codex tab: session and weekly windows" width="49%">
 
 ## Install
 
-Requires macOS 14+ and at least one of the Claude Code or Codex CLIs, signed in. Claude Code counts as set up once its `~/.claude` directory exists, and Codex once you have signed in to it, which by default leaves its credentials in `~/.codex/auth.json`. Whichever are set up are detected automatically when TokenRation launches, so one set up later appears after a relaunch. Once Codex is set up, TokenRation looks for `codex` in:
+Requires macOS 14+ and at least one of the Claude Code, Codex or Grok Build CLIs, signed in. Claude Code counts as set up once its `~/.claude` directory exists, Codex once you have signed in to it, which by default leaves its credentials in `~/.codex/auth.json`, and Grok Build once `grok login` has left its sign-in in `~/.grok/auth.json`. Whichever are set up are detected automatically when TokenRation launches, so one set up later appears after a relaunch. Once Codex is set up, TokenRation looks for `codex` in:
 
 - the ChatGPT app in `/Applications`
 - the VS Code extension
@@ -18,6 +18,8 @@ Requires macOS 14+ and at least one of the Claude Code or Codex CLIs, signed in.
 A codex installed later in the ChatGPT app, the VS Code extension or Homebrew is found without a relaunch. One on a profile-set `PATH` is found at the next launch, if the profile answers within the few seconds TokenRation waits.
 
 A codex that only `.zshrc` or `.bashrc` puts on `PATH`, as nvm usually arranges, is not found unless a file your login shell reads, such as `~/.zprofile` or `~/.bash_profile`, puts its directory on `PATH` too. One installed with npm starts when its `node` sits beside it or in Homebrew's directories.
+
+Grok's numbers are your Grok allowance for the current week or month, which on a SuperGrok plan is shared by everything you use Grok for, plus any on-demand spend or prepaid credit. TokenRation uses `grok` where Grok Build's installer puts it, `~/.grok/bin/grok`.
 
 ```sh
 brew tap MilosRandelovic/tokenration
@@ -36,7 +38,7 @@ claude mcp add tokenration -- tokenration-mcp     # Claude Code
 codex mcp add tokenration -- tokenration-mcp      # Codex
 ```
 
-One tool, **`get_usage`** — takes no arguments and returns every limit, kept separate per provider (`claude` and `codex` each with their own status, metrics and reset times), plus how old the reading is. Poll it as often as you like: it reads a local file, so calling it costs nothing upstream.
+One tool, **`get_usage`** — takes no arguments and returns every limit, kept separate per provider (`claude`, `codex` and `grok` each with their own status, metrics and reset times), plus how old the reading is. Poll it as often as you like: it reads a local file, so calling it costs nothing upstream.
 
 It **only reads** the app's published reading (`~/Library/Application Support/TokenRation/usage.json`) and never calls a usage API itself — MCP servers are spawned per session, so a fetching server would multiply request load across every concurrent agent. Results carry `ageSeconds` and `stale` so a caller can judge freshness; if the app isn't running, the data is simply old.
 
@@ -59,8 +61,9 @@ Launch the built app with `open TokenRation.app`, or copy it to `/Applications` 
 
 - **Claude data:** `GET https://api.anthropic.com/api/oauth/usage` — the same endpoint Claude Code's `/usage` uses. Polled every ~5 minutes, paused while the Mac sleeps or is offline, with exponential backoff and a long hold-off after a rate limit (all persisted, so restarts and wakes can't bypass it).
 - **Codex data:** JSON-RPC `account/rateLimits/read` against a local `codex app-server` subprocess. The ChatGPT HTTP backend rejects non-client callers (403 bot protection), and going through the local CLI means no credential handling of our own and no model quota consumed.
-- **Auth:** the Claude Code CLI stores an OAuth access token in your login Keychain (`Claude Code-credentials`); TokenRation reads that token via `/usr/bin/security` to authenticate the Claude request. Codex needs nothing — its own CLI is already signed in. Credentials are **never written or refreshed**; the CLIs stay the only things that manage them.
-- **Independence:** each provider polls on its own schedule with its own persisted backoff, so one being throttled or signed out never stalls the other.
+- **Grok data:** the billing summary behind Grok Build's `/usage` screen, asked over HTTP with Grok Build's token while it is current. Grok's token lasts six hours, and Grok renews it whenever it runs; once it has expired, TokenRation starts `grok agent` with its update check off and asks it instead, which renews the token, so the next requests go over HTTP again.
+- **Auth:** the Claude Code CLI stores an OAuth access token in your login Keychain (`Claude Code-credentials`); TokenRation reads that token via `/usr/bin/security` to authenticate the Claude request. Codex needs nothing — its own CLI is already signed in. Grok's token is read from `~/.grok/auth.json`. Credentials are **never written or refreshed** by TokenRation; the CLIs stay the only things that manage them.
+- **Independence:** each provider polls on its own schedule with its own persisted backoff, so one being throttled or signed out never stalls the others.
 - **Diagnostics:** every attempt and its outcome is logged to `~/Library/Logs/TokenRation.log` (rotated at 512 KB) for troubleshooting.
 
 ## Architecture
@@ -68,12 +71,14 @@ Launch the built app with `open TokenRation.app`, or copy it to `/Applications` 
 ```
 Sources/TokenRation/
 ├── Main.swift · AppDelegate.swift   entry point; wires providers + prefs + status bar
-├── Provider.swift                   the two providers: detection + per-provider icon family
+├── Provider.swift                   the providers: detection + per-provider icon family
 ├── ProvidersModel.swift             one UsageModel per provider shown; tab selection
 ├── UsageModel.swift                 polling loop + state (per-provider, persisted backoff)
 ├── ClaudeUsageProvider.swift        /api/oauth/usage → DisplayMetrics
 ├── CodexUsageProvider.swift         codex app-server JSON-RPC → DisplayMetrics
 ├── CodexBinary.swift                locates the codex executable
+├── GrokUsageProvider.swift          Grok billing over HTTP, or through grok agent → DisplayMetrics
+├── RPCExchange.swift                one JSON-RPC exchange with a CLI over stdio
 ├── UsageProviding.swift             the provider protocol and UsageError
 ├── KeychainToken.swift              reads the Claude token via /usr/bin/security
 ├── Preferences.swift                which metrics are pinned

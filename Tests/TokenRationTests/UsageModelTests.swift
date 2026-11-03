@@ -266,6 +266,18 @@ import os
     XCTAssertTrue(model.needsSignIn)
   }
 
+  /// Grok's missing sign-in is handled as Claude's is, on the sign-in backoff and with the warning, but in its own
+  /// words: the panel names Grok Build, not Claude Code.
+  func testMissingGrokSignInAsksForAttentionInItsOwnWords() async {
+    let model = UsageModel(
+      provider: StubProvider(provider: .grok) { throw UsageError.grokNotSignedIn }, defaults: makeDefaults(), restoring: nil,
+      network: StubNetwork(), log: discardLog)
+    let wait = await model.refresh(trigger: "test")
+    XCTAssertTrue(model.needsSignIn)
+    XCTAssertEqual(model.lastError, "Not signed in to Grok Build.")
+    XCTAssertGreaterThan(wait, 10 * 60, "on the sign-in backoff")
+  }
+
   /// The model routes `codexUnavailable` to the ordinary backoff, growing with each failure, without asking
   /// for a sign-in: no sign-in fixes a `codex` that is missing or will not start, and the auth interval would
   /// hold it for a quarter of an hour. The sites that throw it are pinned by

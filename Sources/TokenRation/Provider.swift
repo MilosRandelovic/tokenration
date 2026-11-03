@@ -1,15 +1,17 @@
 import Foundation
 
-/// A usage source TokenRation can read. Deliberately a closed set of two — the app is not a
+/// A usage source TokenRation can read. Deliberately a closed set — the app is not a
 /// general multi-provider framework.
 enum Provider: String, CaseIterable, Sendable {
   case claude
   case codex
+  case grok
 
   var displayName: String {
     switch self {
     case .claude: "Claude"
     case .codex: "Codex"
+    case .grok: "Grok"
     }
   }
 
@@ -19,9 +21,9 @@ enum Provider: String, CaseIterable, Sendable {
   /// shell, within the bound that `CodexBinary.loginShellDeadline` documents, because codex on a `PATH` only a
   /// shell profile sets is findable no other way. Asking runs the user's login profile, so this runs once,
   /// where the app is wired together. Never itself prompts for Keychain access. `home` is where the Claude
-  /// check looks for Claude Code's `.claude` directory, and `codex` runs Codex's check, `detectSetUp()`. The
-  /// app passes the user's home and a provider on `CodexBinary.Resolver.shared`, the resolver every fetch uses;
-  /// a test passes a fixture home and its own.
+  /// check looks for Claude Code's `.claude` directory and the Grok check for Grok Build's sign-in, and `codex` runs
+  /// Codex's check, `detectSetUp()`. The app passes the user's home and a provider on `CodexBinary.Resolver.shared`,
+  /// the resolver every fetch uses; a test passes a fixture home and its own.
   static func detectAll(home: URL, codex: CodexUsageProvider) -> [Provider] {
     allCases.filter { provider in
       switch provider {
@@ -30,6 +32,7 @@ enum Provider: String, CaseIterable, Sendable {
         // deliberately don't touch until an actual fetch.
         FileManager.default.fileExists(atPath: home.appendingPathComponent(".claude").path)
       case .codex: codex.detectSetUp()
+      case .grok: GrokUsageProvider.isSetUp(home: home)
       }
     }
   }
@@ -40,6 +43,7 @@ enum Provider: String, CaseIterable, Sendable {
   ///
   ///   Claude — clock · calendar · cpu · dollarsign.circle
   ///   Codex  — hourglass.bottomhalf.filled · hourglass · cpu.fill · creditcard
+  ///   Grok   — bolt · bolt.circle · bolt.square · banknote
   func symbol(for kind: MetricKind) -> String {
     switch (self, kind) {
     case (.claude, .session): "clock"
@@ -50,17 +54,22 @@ enum Provider: String, CaseIterable, Sendable {
     case (.codex, .window): "hourglass"
     case (.codex, .model): "cpu.fill"
     case (.codex, .money): "creditcard"
+    case (.grok, .session): "bolt"
+    case (.grok, .window): "bolt.circle"
+    case (.grok, .model): "bolt.square"
+    case (.grok, .money): "banknote"
     }
   }
 
   /// Namespaced metric id, e.g. `claude:session`, `codex:model:bengalfox`.
   func metricID(_ suffix: String) -> String { "\(rawValue):\(suffix)" }
 
-  /// The metric pinned by default for this provider: Claude's session, and Codex's long window, which every plan has.
+  /// The metric pinned by default for this provider: Claude's session, and Codex's and Grok's long window, which every
+  /// plan has.
   var defaultMetricID: String {
     switch self {
     case .claude: metricID("session")
-    case .codex: metricID("window")
+    case .codex, .grok: metricID("window")
     }
   }
 

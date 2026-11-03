@@ -127,7 +127,7 @@ import UsageState
     onChange?()
   }
 
-  /// Log with the provider name, so a two-provider log stays readable.
+  /// Log with the provider name, so a log every provider shares stays readable.
   private func log(_ message: String) { logSink("[\(source.rawValue)] \(message)") }
 
   // MARK: - Persisted state
@@ -323,10 +323,10 @@ import UsageState
       heldCredentialFingerprint = await provider.credentialFingerprint()
       log("token rejected (failures \(consecutiveFailures)) — retrying in \(Int(wait))s")
       return wait
-    } catch UsageError.notSignedIn {
+    } catch let error as UsageError where error.isMissingSignIn {
       consecutiveFailures += 1
       setRateLimited(until: nil)
-      lastError = UsageError.notSignedIn.errorDescription
+      lastError = error.errorDescription
       needsSignIn = true
       let wait = jittered(Self.authRetryInterval)
       holdOff(wait)
