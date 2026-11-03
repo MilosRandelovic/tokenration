@@ -221,7 +221,7 @@ final class CodexExchangeTests: XCTestCase {
     let pipe = Pipe()
     let ends = Box(0)
     let ended = DispatchSemaphore(value: 0)
-    pipe.fileHandleForReading.readabilityHandler = CodexUsageProvider.reader(
+    pipe.fileHandleForReading.readabilityHandler = RPCPipes.reader(
       onChunk: { _ in },
       onEnd: {
         ends.value += 1

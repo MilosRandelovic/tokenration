@@ -14,9 +14,12 @@ import os
 /// still covered.
 final class CodexWindowTests: XCTestCase {
   private func metrics(_ json: String) throws -> [DisplayMetric] {
-    let envelope = try JSONDecoder().decode(CodexUsageProvider.Envelope.self, from: Data(json.utf8))
+    let envelope = try JSONDecoder().decode(Envelope.self, from: Data(json.utf8))
     return CodexUsageProvider.metrics(from: try XCTUnwrap(envelope.result))
   }
+
+  /// A reply as `codex app-server` sends it.
+  private struct Envelope: Decodable { let result: CodexUsageProvider.RateLimitsResult? }
 
   private func payload(_ limits: String) -> String { #"{"id":2,"result":{"rateLimits":{"# + limits + #"}}}"# }
 

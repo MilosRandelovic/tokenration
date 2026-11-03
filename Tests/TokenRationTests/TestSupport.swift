@@ -152,7 +152,7 @@ final class StubURLProtocol: URLProtocol {
 
 // MARK: - Hanging fixture
 
-/// A real hanging child. `/bin/sleep` was useless here: `CodexExchange` always appends
+/// A real hanging child. `/bin/sleep` was useless here: the Codex exchange always passes
 /// `app-server`, so `sleep app-server` died instantly with "invalid time interval" and the
 /// tests passed without ever reaching the watchdog or the cancellation path.
 struct HangingFixture {
