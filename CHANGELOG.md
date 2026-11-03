@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.0]
+
+- Shows Grok usage: your weekly or monthly allowance with its reset, and any on-demand spend or prepaid credit, in a Grok tab of its own once you have signed in to Grok Build.
+
 ## [1.1.2]
 
 - The panel opens on the display whose menu bar you clicked, instead of moving to another one.
