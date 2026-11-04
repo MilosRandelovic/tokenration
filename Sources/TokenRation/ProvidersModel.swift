@@ -99,7 +99,7 @@ import UsageState
   }
 
   /// The app's providers: Claude's on the network and the login Keychain, Codex's on the shared resolver, and Grok's
-  /// on the network and the user's `~/.grok`. Internal so a test can inspect what it builds, and only inspect: running
+  /// on the network, the user's `~/.grok` and Homebrew's `grok`. Internal so a test can inspect what it builds, and only inspect: running
   /// any of them reaches the network, the Keychain, this Mac's codex or the user's Grok Build.
   nonisolated static func makeProvider(_ provider: Provider) -> any UsageProviding {
     switch provider {
@@ -107,7 +107,10 @@ import UsageState
       ClaudeUsageProvider(session: .uncached, credentials: KeychainCredentials(tool: KeychainToken.securityTool, log: { Log.write($0) }))
     // The shared resolver, as detection used: see `CodexBinary.Resolver`.
     case .codex: CodexUsageProvider()
-    case .grok: GrokUsageProvider(home: FileManager.default.homeDirectoryForCurrentUser, session: .uncached, log: { Log.write($0) })
+    case .grok:
+      GrokUsageProvider(
+        home: FileManager.default.homeDirectoryForCurrentUser, session: .uncached, binDirectories: CodexBinary.Roots.thisMac.binDirectories,
+        log: { Log.write($0) })
     }
   }
 

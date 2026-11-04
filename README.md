@@ -19,7 +19,7 @@ A codex installed later in the ChatGPT app, the VS Code extension or Homebrew is
 
 A codex that only `.zshrc` or `.bashrc` puts on `PATH`, as nvm usually arranges, is not found unless a file your login shell reads, such as `~/.zprofile` or `~/.bash_profile`, puts its directory on `PATH` too. One installed with npm starts when its `node` sits beside it or in Homebrew's directories.
 
-Grok's numbers are your Grok allowance for the current week or month, which on a SuperGrok plan is shared by everything you use Grok for, plus any on-demand spend or prepaid credit. TokenRation uses `grok` where Grok Build's installer puts it, `~/.grok/bin/grok`.
+Grok's numbers are your Grok allowance for the current week or month, which on a SuperGrok plan is shared by everything you use Grok for, plus any on-demand spend or prepaid credit. TokenRation uses `grok` where Grok Build's installer puts it, `~/.grok/bin/grok`, or where Homebrew's `grok-build` cask links it, `/opt/homebrew/bin` or `/usr/local/bin`.
 
 ```sh
 brew tap MilosRandelovic/tokenration

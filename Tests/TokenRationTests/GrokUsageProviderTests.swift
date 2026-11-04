@@ -6,14 +6,18 @@ import XCTest
 // MARK: - The Grok provider
 
 /// Each test works in a home of its own, with Grok Build's sign-in and, where a test needs one, a fixture `grok` in
-/// its `.grok`, so no test reads the user's sign-in or starts the user's Grok Build.
+/// its `.grok` or in a fixture Homebrew directory, so no test reads the user's sign-in or starts the user's Grok Build.
 final class GrokUsageProviderTests: XCTestCase {
   private var home: URL!
 
   override func setUpWithError() throws {
     home = FileManager.default.temporaryDirectory.appendingPathComponent("tokenration-grok-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: home.appendingPathComponent(".grok/bin"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: homebrew, withIntermediateDirectories: true)
   }
+
+  /// Stands in for Homebrew's bin directory.
+  private var homebrew: URL { home.appendingPathComponent("homebrew/bin") }
 
   override func tearDownWithError() throws { try? FileManager.default.removeItem(at: home) }
 
@@ -44,7 +48,9 @@ final class GrokUsageProviderTests: XCTestCase {
     """#
 
   private func provider(answering answer: @escaping StubURLProtocol.Handler, logged: Box<[String]> = Box([])) -> GrokUsageProvider {
-    GrokUsageProvider(home: home, session: StubURLProtocol.session(answering: answer), log: { logged.value.append($0) }, timeout: 10)
+    GrokUsageProvider(
+      home: home, session: StubURLProtocol.session(answering: answer), binDirectories: [homebrew], log: { logged.value.append($0) },
+      timeout: 10)
   }
 
   /// An answer that fails the test: for a fetch that must not ask over HTTP.
@@ -53,10 +59,10 @@ final class GrokUsageProviderTests: XCTestCase {
     return .failure(URLError(.notConnectedToInternet))
   }
 
-  /// A fixture `grok` where Grok Build installs it, which records how it was started and answers `initialize` and
-  /// then the query with `answer`. With `checkingOrder`, it notes whether the query arrived before it answered
-  /// `initialize`, waiting a second for one that comes too early.
-  @discardableResult private func grokBuild(answering answer: String, checkingOrder: Bool = false) throws -> URL {
+  /// A fixture `grok` at `binary`, where Grok Build installs it unless a test says otherwise, which records how it was
+  /// started and answers `initialize` and then the query with `answer`. With `checkingOrder`, it notes whether the
+  /// query arrived before it answered `initialize`, waiting a second for one that comes too early.
+  @discardableResult private func grokBuild(answering answer: String, checkingOrder: Bool = false, at binary: URL? = nil) throws -> URL {
     let calls = home.appendingPathComponent("calls")
     let order = home.appendingPathComponent("order")
     let waitForEarlyQuery =
@@ -75,7 +81,7 @@ final class GrokUsageProviderTests: XCTestCase {
         case "$line" in *'"id":2'*) printf '%s\\n' '\(answer)' ;; esac
       done
       """
-    let binary = GrokUsageProvider.binary(home: home)
+    let binary = binary ?? home.appendingPathComponent(".grok/bin/grok")
     try script.write(to: binary, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
     return calls
@@ -287,13 +293,26 @@ final class GrokUsageProviderTests: XCTestCase {
     XCTAssertNil(problem, "a failure that is not the sign-in's is no sign-in problem")
   }
 
-  /// With no `grok` where Grok Build installs it, an expired token cannot be renewed, which no sign-in fixes.
+  /// A `grok` Homebrew installed renews an expired token as one Grok Build's installer put in `~/.grok/bin` does.
+  func testHomebrewGrokBuildIsUsed() async throws {
+    try signIn(expiresIn: -60)
+    let calls = try grokBuild(answering: reply(unusedWeek), at: homebrew.appendingPathComponent("grok"))
+    let reading = try await provider(answering: unasked).fetch()
+    XCTAssertEqual(reading.metrics.map(\.title), ["Weekly (all Grok)"])
+    XCTAssertEqual(try String(contentsOf: calls, encoding: .utf8), "agent --no-leader stdio 1\n")
+  }
+
+  /// With no `grok` where Grok Build installs it or in Homebrew's directories, an expired token cannot be renewed,
+  /// which no sign-in fixes, and the log names every place looked in.
   func testMissingGrokBuildIsUnavailable() async throws {
     try signIn(expiresIn: -60)
+    let logged = Box<[String]>([])
     do {
-      _ = try await provider(answering: unasked).fetch()
+      _ = try await provider(answering: unasked, logged: logged).fetch()
       XCTFail("an expired token with no Grok Build must not return a reading")
     } catch UsageError.grokUnavailable {} catch { XCTFail("expected grokUnavailable, got \(error)") }
+    let looked = "[grok] no grok at \(home.appendingPathComponent(".grok/bin/grok").path), \(homebrew.appendingPathComponent("grok").path)"
+    XCTAssertTrue(logged.value.contains(looked), "logged: \(logged.value)")
     XCTAssertFalse(UsageError.grokUnavailable.isMissingSignIn)
     XCTAssertTrue(UsageError.grokNotSignedIn.isMissingSignIn)
   }

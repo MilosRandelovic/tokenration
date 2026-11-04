@@ -93,6 +93,8 @@ struct GrokUsageProvider: UsageProviding {
   let home: URL
   /// Asks the billing endpoint: `URLSession.uncached` in the app, a stub in tests.
   let session: URLSession
+  /// Where `grok` is looked for after Grok Build's own `~/.grok/bin`: Homebrew's in the app, a fixture in tests.
+  let binDirectories: [URL]
   /// Where a start of Grok Build, and why, is recorded: the app's log in the app.
   let log: @Sendable (_ message: String) -> Void
   var endpoint = URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!
@@ -112,9 +114,12 @@ struct GrokUsageProvider: UsageProviding {
     let at: Date
   }
 
-  init(home: URL, session: URLSession, log: @escaping @Sendable (_ message: String) -> Void, timeout: TimeInterval = 20) {
+  init(
+    home: URL, session: URLSession, binDirectories: [URL], log: @escaping @Sendable (_ message: String) -> Void, timeout: TimeInterval = 20
+  ) {
     self.home = home
     self.session = session
+    self.binDirectories = binDirectories
     self.log = log
     self.timeout = timeout
   }
@@ -123,8 +128,11 @@ struct GrokUsageProvider: UsageProviding {
   /// started and the file is not read, so detection costs nothing a Mac without Grok would notice.
   static func isSetUp(home: URL) -> Bool { FileManager.default.fileExists(atPath: GrokSignIn.file(home: home).path) }
 
-  /// Where Grok Build's installer puts `grok`, and where its updates keep it.
-  static func binary(home: URL) -> URL { home.appendingPathComponent(".grok/bin/grok") }
+  /// Where `grok` may be, in the order they are tried: where Grok Build's installer puts it and its updates keep it,
+  /// then each of `binDirectories`, where Homebrew's `grok-build` cask links it.
+  static func binaries(home: URL, binDirectories: [URL]) -> [URL] {
+    [home.appendingPathComponent(".grok/bin/grok")] + binDirectories.map { $0.appendingPathComponent("grok") }
+  }
 
   /// Changes with every issue of the token, which is every renewal as well as every sign-in.
   func credentialFingerprint() async -> String? { (try? GrokSignIn.read(home: home))?.issue ?? "none" }
@@ -204,9 +212,9 @@ struct GrokUsageProvider: UsageProviding {
   /// Starts `grok agent` and calls its `x.ai/billing` method, which answers from the same endpoint after Grok has
   /// renewed its token. Its update check is switched off, so this never updates Grok behind the user's back.
   private func askGrokBuild() async throws -> BillingResponse {
-    let binary = Self.binary(home: home)
-    guard FileManager.default.isExecutableFile(atPath: binary.path) else {
-      log("[grok] no grok at \(binary.path)")
+    let candidates = Self.binaries(home: home, binDirectories: binDirectories)
+    guard let binary = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+      log("[grok] no grok at \(candidates.map(\.path).joined(separator: ", "))")
       throw UsageError.grokUnavailable
     }
     let exchange = RPCExchange<BillingResponse>(
