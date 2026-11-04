@@ -240,13 +240,13 @@ struct CodexUsageProvider: UsageProviding {
     return .session
   }
 
-  /// Name a window by its duration, e.g. 10080 mins -> "Weekly (7-day)".
+  /// Name a window by its duration, e.g. 300 mins -> "Session (5-hour)". A week needs no length beside it.
   private static func label(for window: Bucket.Window) -> String {
     guard let minutes = window.windowDurationMins else { return "Usage limit" }
     switch minutes {
     case ..<120: return "Session (\(minutes)-minute)"
     case ..<1440: return "Session (\(minutes / 60)-hour)"
-    case 10080: return "Weekly (7-day)"
+    case 10080: return "Weekly"
     default: return "Rolling (\(minutes / 1440)-day)"
     }
   }
