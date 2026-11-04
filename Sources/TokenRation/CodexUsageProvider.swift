@@ -186,7 +186,7 @@ struct CodexUsageProvider: UsageProviding {
         if !approximate.isEmpty { detail += " · " + approximate.joined(separator: ", ") + " msgs" }
         metrics.append(
           DisplayMetric(
-            id: provider.metricID("credits"), provider: provider, title: "Credits", symbolName: provider.symbol(for: .money),
+            id: provider.metricID("credits"), provider: provider, title: "Credits", symbolName: MetricKind.money.symbolName,
             barText: unlimited ? "∞" : balance, valueText: detail, fraction: nil,
             // A balance carries no denominator, so exhaustion can only come from the flag.
             severity: main.spendControlReached == true ? .critical : .normal, resetsAt: nil))
@@ -206,8 +206,8 @@ struct CodexUsageProvider: UsageProviding {
   private static func window(_ window: Bucket.Window, id: String, kind: MetricKind, title: String) -> DisplayMetric {
     let percent = Int((window.usedPercent ?? 0).rounded())
     return DisplayMetric(
-      id: id, provider: .codex, title: title, symbolName: Provider.codex.symbol(for: kind), barText: "\(percent)%",
-      valueText: "\(percent)% used", fraction: Double(percent) / 100, severity: severity(percent: percent),
+      id: id, provider: .codex, title: title, symbolName: kind.symbolName, barText: "\(percent)%", valueText: "\(percent)% used",
+      fraction: Double(percent) / 100, severity: severity(percent: percent),
       resetsAt: window.resetsAt.map { Date(timeIntervalSince1970: $0) })
   }
 
@@ -228,7 +228,7 @@ struct CodexUsageProvider: UsageProviding {
     var detail = "\(used)% used"
     if let usedText = cap.used?.display, let limitText = cap.limit?.display { detail = "\(usedText) / \(limitText) · \(used)%" }
     return DisplayMetric(
-      id: Provider.codex.metricID("spend"), provider: .codex, title: "Monthly credits", symbolName: Provider.codex.symbol(for: .money),
+      id: Provider.codex.metricID("spend"), provider: .codex, title: "Monthly credits", symbolName: MetricKind.money.symbolName,
       barText: "\(used)%", valueText: detail, fraction: Double(used) / 100, severity: reached == true ? .critical : severity(percent: used),
       resetsAt: cap.resetsAt?.number.map { Date(timeIntervalSince1970: $0) })
   }

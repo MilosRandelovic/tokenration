@@ -46,8 +46,8 @@ final class CodexWindowTests: XCTestCase {
     // Paired with the title rather than checked by position: a positional check passes if order
     // and glyph are both wrong in the same direction.
     let glyphs = Dictionary(uniqueKeysWithValues: result.map { ($0.title, $0.symbolName) })
-    XCTAssertEqual(glyphs["Session (5-hour)"], Provider.codex.symbol(for: .session), "a 5-hour limit must not wear the weekly glyph")
-    XCTAssertEqual(glyphs["Weekly (7-day)"], Provider.codex.symbol(for: .window))
+    XCTAssertEqual(glyphs["Session (5-hour)"], MetricKind.session.symbolName, "a 5-hour limit must not wear the weekly glyph")
+    XCTAssertEqual(glyphs["Weekly (7-day)"], MetricKind.window.symbolName)
   }
 
   /// A monthly credit cap is the Codex analogue of Claude's extra usage: it has a total, so it
@@ -112,6 +112,6 @@ final class CodexWindowTests: XCTestCase {
   func testWindowWithoutADurationIsUnnamed() throws {
     let result = try metrics(payload(#""primary":{"usedPercent":5}"#))
     XCTAssertEqual(result.map(\.title), ["Usage limit"])
-    XCTAssertEqual(result.map(\.symbolName), [Provider.codex.symbol(for: .window)], "an unknown window is the long one")
+    XCTAssertEqual(result.map(\.symbolName), [MetricKind.window.symbolName], "an unknown window is the long one")
   }
 }

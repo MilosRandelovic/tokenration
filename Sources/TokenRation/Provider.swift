@@ -37,30 +37,6 @@ enum Provider: String, CaseIterable, Sendable {
     }
   }
 
-  /// Menu-bar/panel glyphs. Each provider uses a **distinct symbol family** for the same
-  /// concepts, which is how the menu bar tells them apart: template images are monochrome
-  /// (so colour is unavailable), and adding letters or dividers would cost width.
-  ///
-  ///   Claude — clock · calendar · cpu · dollarsign.circle
-  ///   Codex  — hourglass.bottomhalf.filled · hourglass · cpu.fill · creditcard
-  ///   Grok   — bolt · bolt.circle · bolt.square · banknote
-  func symbol(for kind: MetricKind) -> String {
-    switch (self, kind) {
-    case (.claude, .session): "clock"
-    case (.claude, .window): "calendar"
-    case (.claude, .model): "cpu"
-    case (.claude, .money): "dollarsign.circle"
-    case (.codex, .session): "hourglass.bottomhalf.filled"
-    case (.codex, .window): "hourglass"
-    case (.codex, .model): "cpu.fill"
-    case (.codex, .money): "creditcard"
-    case (.grok, .session): "bolt"
-    case (.grok, .window): "bolt.circle"
-    case (.grok, .model): "bolt.square"
-    case (.grok, .money): "banknote"
-    }
-  }
-
   /// Namespaced metric id, e.g. `claude:session`, `codex:model:bengalfox`.
   func metricID(_ suffix: String) -> String { "\(rawValue):\(suffix)" }
 
@@ -80,7 +56,7 @@ enum Provider: String, CaseIterable, Sendable {
   }
 }
 
-/// What a metric measures, independent of provider — used to pick the provider's glyph.
+/// What a metric measures, independent of provider, which is what its glyph shows.
 enum MetricKind: Sendable {
   /// A window shorter than a day: Claude's 5-hour, and Codex's by its duration, whichever slot it arrives in.
   case session
@@ -90,4 +66,15 @@ enum MetricKind: Sendable {
   case model
   /// Spend or credits.
   case money
+
+  /// The glyph for this kind, the same for every provider, so a glyph always means one kind of limit. The menu bar
+  /// names the provider beside it instead, when the pins span more than one.
+  var symbolName: String {
+    switch self {
+    case .session: "clock"
+    case .window: "calendar"
+    case .model: "cpu"
+    case .money: "dollarsign.circle"
+    }
+  }
 }

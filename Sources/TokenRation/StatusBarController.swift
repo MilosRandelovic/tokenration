@@ -142,7 +142,7 @@ private struct PanelRoot: View {
     let width: CGFloat = 26
     let image = NSImage(size: NSSize(width: width, height: height))
     image.lockFocus()
-    if let symbol = symbolImage(symbolName) {
+    if let symbol = symbolImage(symbolName, pointSize: 12) {
       symbol.draw(
         in: NSRect(
           x: ((width - symbol.size.width) / 2).rounded(), y: ((height - symbol.size.height) / 2).rounded(), width: symbol.size.width,
@@ -276,7 +276,8 @@ private struct PanelRoot: View {
   /// All pinned metrics laid out left-to-right into one template image.
   private func compositeImage(ids: [String]) -> NSImage {
     let height = max(NSStatusBar.system.thickness, 22)
-    let segments = ids.map { segment(id: $0) }
+    let namesProvider = Self.namesProviders(pinned: ids)
+    let segments = ids.map { segment(id: $0, namingProvider: namesProvider) }
     let segmentGap: CGFloat = 10
     let sidePad: CGFloat = 4
     let width = sidePad * 2 + segments.reduce(0) { $0 + $1.size.width } + segmentGap * CGFloat(max(segments.count - 1, 0))
@@ -293,53 +294,73 @@ private struct PanelRoot: View {
     return image
   }
 
-  /// One metric: SF Symbol on the left, then two rows (big value over small secondary).
-  private func segment(id: String) -> NSImage {
+  /// Whether each metric names its provider: only when the pins span more than one, since a glyph means the same kind
+  /// of limit for every provider and a bar of one provider's metrics needs no name to tell them apart.
+  static func namesProviders(pinned ids: [String]) -> Bool { Set(ids.compactMap { Provider.owning(metricID: $0) }).count > 1 }
+
+  /// One metric in two rows: its glyph and value on top, and below them, in smaller type, its countdown, led by its
+  /// provider's name when `namingProvider` says so. The name and the dot after it are drawn faded, which keeps them
+  /// apart from the countdown without making the name heavier.
+  private func segment(id: String, namingProvider: Bool) -> NSImage {
     let metric = providers.metric(id: id)
-    // A provider whose credentials have lapsed shows a warning in place of its own glyph:
-    // every one of its rows is stale for the same reason, and unlike a throttle it is
-    // something only you can clear.
     let provider = metric?.provider ?? Provider.owning(metricID: id)
+    // A provider whose credentials have lapsed shows a warning in place of its glyph: every one of its rows is stale
+    // for the same reason, and unlike a throttle it is something only you can clear.
     let needsSignIn = provider.map { providers.model(for: $0)?.needsSignIn == true } ?? false
     let glyph = needsSignIn ? "exclamationmark.triangle.fill" : (metric?.symbolName ?? DisplayMetric.symbolName(for: id))
     let symbol = symbolImage(glyph)
     let primary = line(metric?.barText ?? "—", size: 11, weight: .semibold, lineHeight: 12)
-    let secondary = line(menuSecondary(for: metric), size: 8, weight: .regular, lineHeight: 9)
+    let secondary = secondaryLine(provider: namingProvider ? provider?.displayName : nil, countdown: menuSecondary(for: metric))
 
     let pSize = primary.size()
-    let sSize = secondary.size()
-    // The second line's height is reserved whether or not it has text. A window whose reset has
-    // passed has nothing to say there, and without the reservation that segment's percentage
-    // would centre itself while its neighbours sat on the two-line baseline.
+    // The second line's height is reserved whether or not it has text. A window whose reset has passed has nothing
+    // to say there, and without the reservation that segment's percentage would centre itself while its neighbours
+    // sat on the two-line baseline.
     let secondaryHeight: CGFloat = 9
-    let textWidth = max(pSize.width, sSize.width)
     let symbolWidth = symbol?.size.width ?? 0
     let symbolGap: CGFloat = symbol == nil ? 0 : 3
+    let topWidth = symbolWidth + symbolGap + pSize.width
+    let width = max(topWidth, secondary.size().width, 1)
     let height = max(NSStatusBar.system.thickness, 22)
 
-    let image = NSImage(size: NSSize(width: max(symbolWidth + symbolGap + textWidth, 1), height: height))
+    let image = NSImage(size: NSSize(width: width, height: height))
     image.lockFocus()
-    var x: CGFloat = 0
+    let bottom = ((height - (pSize.height + secondaryHeight)) / 2).rounded()
+    let top = bottom + secondaryHeight
+    var x = ((width - topWidth) / 2).rounded()
     if let symbol {
-      let y = ((height - symbol.size.height) / 2).rounded()
+      let y = (top + (pSize.height - symbol.size.height) / 2).rounded()
       symbol.draw(in: NSRect(x: x, y: y, width: symbol.size.width, height: symbol.size.height))
       x += symbolWidth + symbolGap
     }
-    let bottom = ((height - (pSize.height + secondaryHeight)) / 2).rounded()
-    secondary.draw(in: NSRect(x: x, y: bottom, width: textWidth, height: secondaryHeight))
-    primary.draw(in: NSRect(x: x, y: bottom + secondaryHeight, width: textWidth, height: pSize.height))
+    primary.draw(in: NSRect(x: x, y: top, width: pSize.width, height: pSize.height))
+    secondary.draw(in: NSRect(x: 0, y: bottom, width: width, height: secondaryHeight))
     image.unlockFocus()
     return image
   }
 
-  private func symbolImage(_ name: String) -> NSImage? {
-    let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+  /// The lower row: the countdown, led by the provider's name and a dot, both faded, when a name is given.
+  private func secondaryLine(provider name: String?, countdown: String) -> NSAttributedString {
+    let row = NSMutableAttributedString()
+    if let name {
+      let faded = NSColor.black.withAlphaComponent(0.55)
+      row.append(line(countdown.isEmpty ? name : name + " · ", size: 8, weight: .regular, lineHeight: 9, color: faded))
+    }
+    row.append(line(countdown, size: 8, weight: .regular, lineHeight: 9))
+    return row
+  }
+
+  /// 11pt beside a metric's value, which it shares a row with, and 12pt alone.
+  private func symbolImage(_ name: String, pointSize: CGFloat = 11) -> NSImage? {
+    let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
     let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     image?.isTemplate = true
     return image
   }
 
-  private func line(_ string: String, size: CGFloat, weight: NSFont.Weight, lineHeight: CGFloat) -> NSAttributedString {
+  private func line(_ string: String, size: CGFloat, weight: NSFont.Weight, lineHeight: CGFloat, color: NSColor = .black)
+    -> NSAttributedString
+  {
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .center
     paragraph.maximumLineHeight = lineHeight
@@ -347,7 +368,7 @@ private struct PanelRoot: View {
     return NSAttributedString(
       string: string,
       attributes: [
-        .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight), .foregroundColor: NSColor.black, .paragraphStyle: paragraph,
+        .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight), .foregroundColor: color, .paragraphStyle: paragraph,
       ])
   }
 

@@ -2,7 +2,7 @@
 
 A native macOS menu-bar app that shows your **Claude**, **Codex** and **Grok** usage at a glance — session and weekly windows, per-model limits (e.g. Fable, Codex-Spark), and spend/credits.
 
-Pin one metric for a single icon, or several to stack them. Each provider uses a distinct icon family so you can tell them apart at a glance, and all icons are template images, so they look right on light and dark menu bars. When more than one provider is set up, the panel gets a tab each.
+Pin one metric for a single icon, or several to stack them. Each kind of limit has the same icon whichever app it comes from, and when you pin metrics from more than one app, each names its app ahead of its countdown. All icons are template images, so they look right on light and dark menu bars. When more than one provider is set up, the panel gets a tab each.
 
 <img src="docs/panel-claude.png" alt="Panel on the Claude tab: session, weekly, per-model and spend meters, with three metrics pinned to the menu bar above" width="49%"> <img src="docs/panel-codex.png" alt="Panel on the Codex tab: session and weekly windows" width="49%">
 
@@ -71,7 +71,7 @@ Launch the built app with `open TokenRation.app`, or copy it to `/Applications` 
 ```
 Sources/TokenRation/
 ├── Main.swift · AppDelegate.swift   entry point; wires providers + prefs + status bar
-├── Provider.swift                   the providers: detection + per-provider icon family
+├── Provider.swift                   the providers: detection, and each kind of metric's icon
 ├── ProvidersModel.swift             one UsageModel per provider shown; tab selection
 ├── UsageModel.swift                 polling loop + state (per-provider, persisted backoff)
 ├── ClaudeUsageProvider.swift        /api/oauth/usage → DisplayMetrics

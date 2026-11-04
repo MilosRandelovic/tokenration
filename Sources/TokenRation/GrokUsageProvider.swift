@@ -301,7 +301,7 @@ struct GrokUsageProvider: UsageProviding {
       let scope = config.isUnifiedBillingUser == true ? "all Grok" : "Grok Build"
       metrics.append(
         DisplayMetric(
-          id: provider.metricID("window"), provider: provider, title: "\(period) (\(scope))", symbolName: provider.symbol(for: .window),
+          id: provider.metricID("window"), provider: provider, title: "\(period) (\(scope))", symbolName: MetricKind.window.symbolName,
           barText: "\(percent)%", valueText: "\(percent)% used", fraction: Double(percent) / 100, severity: severity(percent: percent),
           resetsAt: (config.currentPeriod?.end ?? config.billingPeriodEnd).flatMap(parseDate)))
     }
@@ -312,7 +312,7 @@ struct GrokUsageProvider: UsageProviding {
       let percent = Int((Double(used) / Double(cap) * 100).rounded())
       metrics.append(
         DisplayMetric(
-          id: provider.metricID("on-demand"), provider: provider, title: "On-demand", symbolName: provider.symbol(for: .money),
+          id: provider.metricID("on-demand"), provider: provider, title: "On-demand", symbolName: MetricKind.money.symbolName,
           barText: dollars(used, fractionDigits: 0), valueText: "\(dollars(used)) / \(dollars(cap)) · \(percent)%",
           fraction: Double(used) / Double(cap), severity: severity(percent: percent), resetsAt: nil))
     }
@@ -321,7 +321,7 @@ struct GrokUsageProvider: UsageProviding {
     if let balance = config.prepaidBalance?.cents, balance > 0 {
       metrics.append(
         DisplayMetric(
-          id: provider.metricID("credits"), provider: provider, title: "Prepaid credits", symbolName: provider.symbol(for: .money),
+          id: provider.metricID("credits"), provider: provider, title: "Prepaid credits", symbolName: MetricKind.money.symbolName,
           barText: dollars(balance, fractionDigits: 0), valueText: "\(dollars(balance)) remaining", fraction: nil, severity: .normal,
           resetsAt: nil))
     }

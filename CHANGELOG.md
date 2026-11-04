@@ -3,6 +3,7 @@
 ## [1.2.0]
 
 - Shows Grok usage: your weekly or monthly allowance with its reset, and any on-demand spend or prepaid credit, in a Grok tab of its own once you have signed in to Grok Build.
+- Each kind of limit has the same icon in every app, and metrics pinned from more than one app name their app ahead of the countdown.
 
 ## [1.1.2]
 

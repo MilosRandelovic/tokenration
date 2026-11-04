@@ -159,19 +159,17 @@ private struct UsageResponse: Decodable {
     switch limit.kind {
     case "session":
       return DisplayMetric(
-        id: Provider.claude.metricID("session"), provider: .claude, title: "Session (5-hour)",
-        symbolName: Provider.claude.symbol(for: .session), barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
-        severity: severity, resetsAt: resetsAt)
+        id: Provider.claude.metricID("session"), provider: .claude, title: "Session (5-hour)", symbolName: MetricKind.session.symbolName,
+        barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction, severity: severity, resetsAt: resetsAt)
     case "weekly_all":
       return DisplayMetric(
-        id: Provider.claude.metricID("weekly"), provider: .claude, title: "Weekly (all models)",
-        symbolName: Provider.claude.symbol(for: .window), barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
-        severity: severity, resetsAt: resetsAt)
+        id: Provider.claude.metricID("weekly"), provider: .claude, title: "Weekly (all models)", symbolName: MetricKind.window.symbolName,
+        barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction, severity: severity, resetsAt: resetsAt)
     case "weekly_scoped":
       let name = limit.scope?.model?.displayName ?? "Model"
       return DisplayMetric(
         id: Provider.claude.metricID("model:\(name)"), provider: .claude, title: "\(name) (weekly)",
-        symbolName: Provider.claude.symbol(for: .model), barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
+        symbolName: MetricKind.model.symbolName, barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
         severity: severity, resetsAt: resetsAt)
     default: return nil
     }
@@ -189,7 +187,7 @@ private struct UsageResponse: Decodable {
       valueText = "\(usedText) / \(limitText) · \(percent)%"
     }
     return DisplayMetric(
-      id: Provider.claude.metricID("spend"), provider: .claude, title: "Extra usage", symbolName: Provider.claude.symbol(for: .money),
+      id: Provider.claude.metricID("spend"), provider: .claude, title: "Extra usage", symbolName: MetricKind.money.symbolName,
       barText: barText, valueText: valueText, fraction: spend.percent.map { $0 / 100 }, severity: Severity(apiValue: spend.severity),
       resetsAt: nil)
   }
