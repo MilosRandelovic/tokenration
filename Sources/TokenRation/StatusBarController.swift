@@ -142,7 +142,7 @@ private struct PanelRoot: View {
     let width: CGFloat = 26
     let image = NSImage(size: NSSize(width: width, height: height))
     image.lockFocus()
-    if let symbol = symbolImage(symbolName, pointSize: 12) {
+    if let symbol = symbolImage(symbolName) {
       symbol.draw(
         in: NSRect(
           x: ((width - symbol.size.width) / 2).rounded(), y: ((height - symbol.size.height) / 2).rounded(), width: symbol.size.width,
@@ -298,9 +298,10 @@ private struct PanelRoot: View {
   /// of limit for every provider and a bar of one provider's metrics needs no name to tell them apart.
   static func namesProviders(pinned ids: [String]) -> Bool { Set(ids.compactMap { Provider.owning(metricID: $0) }).count > 1 }
 
-  /// One metric in two rows: its glyph and value on top, and below them, in smaller type, its countdown, led by its
-  /// provider's name when `namingProvider` says so. The name and the dot after it are drawn faded, which keeps them
-  /// apart from the countdown without making the name heavier.
+  /// One metric, its value over its countdown. A bar of one provider's metrics keeps the glyph to their left, centred
+  /// on both rows. A bar spanning providers puts the glyph beside the value and leads the countdown with the provider's
+  /// name: the name and the dot after it are drawn faded, which keeps them apart from the countdown without making
+  /// the name heavier, and the glyph moves up so the name has the lower row's width to itself.
   private func segment(id: String, namingProvider: Bool) -> NSImage {
     let metric = providers.metric(id: id)
     let provider = metric?.provider ?? Provider.owning(metricID: id)
@@ -308,7 +309,7 @@ private struct PanelRoot: View {
     // for the same reason, and unlike a throttle it is something only you can clear.
     let needsSignIn = provider.map { providers.model(for: $0)?.needsSignIn == true } ?? false
     let glyph = needsSignIn ? "exclamationmark.triangle.fill" : (metric?.symbolName ?? DisplayMetric.symbolName(for: id))
-    let symbol = symbolImage(glyph)
+    let symbol = symbolImage(glyph, pointSize: namingProvider ? 11 : 12)
     let primary = line(metric?.barText ?? "—", size: 11, weight: .semibold, lineHeight: 12)
     let secondary = secondaryLine(provider: namingProvider ? provider?.displayName : nil, countdown: menuSecondary(for: metric))
 
@@ -319,14 +320,29 @@ private struct PanelRoot: View {
     let secondaryHeight: CGFloat = 9
     let symbolWidth = symbol?.size.width ?? 0
     let symbolGap: CGFloat = symbol == nil ? 0 : 3
-    let topWidth = symbolWidth + symbolGap + pSize.width
-    let width = max(topWidth, secondary.size().width, 1)
     let height = max(NSStatusBar.system.thickness, 22)
-
-    let image = NSImage(size: NSSize(width: width, height: height))
-    image.lockFocus()
     let bottom = ((height - (pSize.height + secondaryHeight)) / 2).rounded()
     let top = bottom + secondaryHeight
+
+    guard namingProvider else {
+      let textWidth = max(pSize.width, secondary.size().width)
+      let image = NSImage(size: NSSize(width: max(symbolWidth + symbolGap + textWidth, 1), height: height))
+      image.lockFocus()
+      if let symbol {
+        symbol.draw(
+          in: NSRect(x: 0, y: ((height - symbol.size.height) / 2).rounded(), width: symbol.size.width, height: symbol.size.height))
+      }
+      let x = symbolWidth + symbolGap
+      secondary.draw(in: NSRect(x: x, y: bottom, width: textWidth, height: secondaryHeight))
+      primary.draw(in: NSRect(x: x, y: top, width: textWidth, height: pSize.height))
+      image.unlockFocus()
+      return image
+    }
+
+    let topWidth = symbolWidth + symbolGap + pSize.width
+    let width = max(topWidth, secondary.size().width, 1)
+    let image = NSImage(size: NSSize(width: width, height: height))
+    image.lockFocus()
     var x = ((width - topWidth) / 2).rounded()
     if let symbol {
       let y = (top + (pSize.height - symbol.size.height) / 2).rounded()
@@ -350,8 +366,8 @@ private struct PanelRoot: View {
     return row
   }
 
-  /// 11pt beside a metric's value, which it shares a row with, and 12pt alone.
-  private func symbolImage(_ name: String, pointSize: CGFloat = 11) -> NSImage? {
+  /// 12pt across a metric's two rows or alone, and 11pt beside a value it shares a row with.
+  private func symbolImage(_ name: String, pointSize: CGFloat = 12) -> NSImage? {
     let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
     let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     image?.isTemplate = true
