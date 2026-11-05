@@ -18,7 +18,7 @@ import os
           provider: "codex", displayName: "Codex", status: "ok", error: nil, updatedAt: updatedAt, rateLimitedUntil: nil,
           metrics: [
             MetricUsage(
-              id: "codex:window", title: "Weekly (7-day)", usedPercent: 41, value: "41%", detail: "41% used", severity: "warning",
+              id: "codex:window", title: "Weekly (all models)", usedPercent: 41, value: "41%", detail: "41% used", severity: "warning",
               resetsAt: Date(timeIntervalSince1970: 2_000_000))
           ])
       ])

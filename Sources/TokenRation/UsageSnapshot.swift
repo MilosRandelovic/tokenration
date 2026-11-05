@@ -51,7 +51,7 @@ extension DisplayMetric {
   /// used when a pinned metric has no reading yet, and when rebuilding a stored one.
   static func symbolName(for id: String) -> String {
     let parts = id.split(separator: ":", maxSplits: 1)
-    guard parts.count == 2, let provider = Provider(rawValue: String(parts[0])) else { return "gauge.with.dots.needle.bottom.50percent" }
+    guard parts.count == 2, Provider(rawValue: String(parts[0])) != nil else { return "gauge.with.dots.needle.bottom.50percent" }
     let suffix = String(parts[1])
     let kind: MetricKind
     switch suffix {
@@ -60,7 +60,7 @@ extension DisplayMetric {
     case "spend", "credits": kind = .money
     default: kind = suffix.hasPrefix("model:") ? .model : .window
     }
-    return provider.symbol(for: kind)
+    return kind.symbolName
   }
 }
 

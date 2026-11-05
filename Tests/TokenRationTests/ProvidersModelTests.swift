@@ -172,4 +172,13 @@ import os
     XCTAssertEqual(credentials.service, "Claude Code-credentials")
     XCTAssertEqual(credentials.tool, KeychainToken.securityTool)
   }
+
+  /// The app's Grok provider asks the network through the uncached session, reads Grok Build's sign-in from the
+  /// user's home, and looks for `grok` in Homebrew's directories too.
+  func testProvidersModelBuildsGrokOnTheNetworkAndTheUsersHome() throws {
+    let grok = try XCTUnwrap(ProvidersModel.makeProvider(.grok) as? GrokUsageProvider)
+    XCTAssertTrue(grok.session === URLSession.uncached)
+    XCTAssertEqual(grok.home, FileManager.default.homeDirectoryForCurrentUser)
+    XCTAssertEqual(grok.binDirectories, CodexBinary.Roots.thisMac.binDirectories)
+  }
 }

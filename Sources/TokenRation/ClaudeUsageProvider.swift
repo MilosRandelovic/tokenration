@@ -79,7 +79,7 @@ struct ClaudeUsageProvider: UsageProviding {
     switch http.statusCode {
     case 200: break
     case 401, 403: throw UsageError.sessionExpired
-    case 429: throw UsageError.rateLimited(retryAfter: Self.retryAfter(http.value(forHTTPHeaderField: "Retry-After")))
+    case 429: throw UsageError.rateLimited(retryAfter: RetryAfter.seconds(http.value(forHTTPHeaderField: "Retry-After")))
     default: throw UsageError.requestFailed(http.statusCode)
     }
 
@@ -91,19 +91,6 @@ struct ClaudeUsageProvider: UsageProviding {
     let snapshot = payload.snapshot(now: Date())
     guard !snapshot.metrics.isEmpty else { throw UsageError.badResponse }
     return snapshot
-  }
-
-  /// `Retry-After` is either a number of seconds or an HTTP-date; parsing only the former
-  /// silently dropped the server's guidance and let us retry far too soon.
-  private static func retryAfter(_ header: String?) -> TimeInterval? {
-    guard let header = header?.trimmingCharacters(in: .whitespaces), !header.isEmpty else { return nil }
-    if let seconds = TimeInterval(header) { return max(seconds, 0) }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(identifier: "GMT")
-    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-    guard let date = formatter.date(from: header) else { return nil }
-    return max(date.timeIntervalSinceNow, 0)
   }
 }
 
@@ -172,19 +159,17 @@ private struct UsageResponse: Decodable {
     switch limit.kind {
     case "session":
       return DisplayMetric(
-        id: Provider.claude.metricID("session"), provider: .claude, title: "Session (5-hour)",
-        symbolName: Provider.claude.symbol(for: .session), barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
-        severity: severity, resetsAt: resetsAt)
+        id: Provider.claude.metricID("session"), provider: .claude, title: "Session (5-hour)", symbolName: MetricKind.session.symbolName,
+        barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction, severity: severity, resetsAt: resetsAt)
     case "weekly_all":
       return DisplayMetric(
-        id: Provider.claude.metricID("weekly"), provider: .claude, title: "Weekly (all models)",
-        symbolName: Provider.claude.symbol(for: .window), barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
-        severity: severity, resetsAt: resetsAt)
+        id: Provider.claude.metricID("weekly"), provider: .claude, title: "Weekly (all models)", symbolName: MetricKind.window.symbolName,
+        barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction, severity: severity, resetsAt: resetsAt)
     case "weekly_scoped":
       let name = limit.scope?.model?.displayName ?? "Model"
       return DisplayMetric(
         id: Provider.claude.metricID("model:\(name)"), provider: .claude, title: "\(name) (weekly)",
-        symbolName: Provider.claude.symbol(for: .model), barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
+        symbolName: MetricKind.model.symbolName, barText: "\(percent)%", valueText: "\(percent)% used", fraction: fraction,
         severity: severity, resetsAt: resetsAt)
     default: return nil
     }
@@ -202,7 +187,7 @@ private struct UsageResponse: Decodable {
       valueText = "\(usedText) / \(limitText) · \(percent)%"
     }
     return DisplayMetric(
-      id: Provider.claude.metricID("spend"), provider: .claude, title: "Extra usage", symbolName: Provider.claude.symbol(for: .money),
+      id: Provider.claude.metricID("spend"), provider: .claude, title: "Extra usage", symbolName: MetricKind.money.symbolName,
       barText: barText, valueText: valueText, fraction: spend.percent.map { $0 / 100 }, severity: Severity(apiValue: spend.severity),
       resetsAt: nil)
   }
@@ -231,5 +216,21 @@ enum Money {
     formatter.maximumFractionDigits = fractionDigits
     formatter.minimumFractionDigits = fractionDigits
     return formatter.string(from: NSNumber(value: amount)) ?? "\(currency) \(amount)"
+  }
+}
+
+/// Reads a `Retry-After` header for any provider asking over HTTP.
+enum RetryAfter {
+  /// `Retry-After` is either a number of seconds or an HTTP-date; parsing only the former
+  /// silently dropped the server's guidance and let us retry far too soon.
+  static func seconds(_ header: String?) -> TimeInterval? {
+    guard let header = header?.trimmingCharacters(in: .whitespaces), !header.isEmpty else { return nil }
+    if let seconds = TimeInterval(header) { return max(seconds, 0) }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    guard let date = formatter.date(from: header) else { return nil }
+    return max(date.timeIntervalSinceNow, 0)
   }
 }
