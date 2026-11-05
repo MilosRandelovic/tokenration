@@ -36,6 +36,7 @@ TokenRation bundles an MCP server so coding agents can check your remaining quot
 ```sh
 claude mcp add tokenration -- tokenration-mcp     # Claude Code
 codex mcp add tokenration -- tokenration-mcp      # Codex
+grok mcp add tokenration tokenration-mcp          # Grok Build
 ```
 
 One tool, **`get_usage`** — takes no arguments and returns every limit, kept separate per provider (`claude`, `codex` and `grok` each with their own status, metrics and reset times), plus how old the reading is. Poll it as often as you like: it reads a local file, so calling it costs nothing upstream.
